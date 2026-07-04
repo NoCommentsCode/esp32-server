@@ -1,0 +1,721 @@
+openapi: 3.0.3
+info:
+  title: ESP32 Weather Station API
+  description: |
+    REST API домашней метеостанции на ESP32 (MicroPython).
+
+    Подключённые датчики:
+    - **DHT22** — температура и влажность (GPIO 14)
+    - **BMP280** — температура и давление (I2C, GPIO 21/22)
+    - **C8 / MH-Z19C** — CO₂ (UART, GPIO 16/17)
+
+    Все ответы в формате JSON. Ошибки возвращаются как `{"error": "..."}`.
+    Некоторые эндпоинты (например CO₂ при 503) возвращают расширенный объект с полем `diagnostics`.
+
+    Базовый URL: `http://<IP_ESP32>` (порт по умолчанию 80).
+  version: 2.0.0
+  contact:
+    name: ESP32 Weather Station
+
+servers:
+  - url: http://{host}
+    description: ESP32 в локальной сети
+    variables:
+      host:
+        default: 192.168.1.100
+        description: IP-адрес устройства (см. GET /info)
+
+tags:
+  - name: System
+    description: Здоровье системы и перезагрузка
+  - name: Device
+    description: Информация об устройстве
+  - name: Sensors
+    description: Агрегированные данные датчиков (заглушка)
+  - name: DHT22
+    description: Датчик температуры и влажности
+  - name: BMP280
+    description: Датчик давления
+  - name: CO2
+    description: Датчик углекислого газа (C8 или MH-Z19C)
+  - name: GPIO
+    description: Управление GPIO пинами
+  - name: Settings
+    description: Настройки в config.json на устройстве
+  - name: Weather
+    description: Внешняя погода через WeatherAPI
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Проверка работоспособности
+      operationId: getHealth
+      responses:
+        '200':
+          description: Сервер работает
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: OK
+                uptime: 0
+                memory_free: 125000
+
+  /system/restart:
+    post:
+      tags: [System]
+      summary: Перезагрузка ESP32
+      description: Отправляет ответ и перезагружает устройство через ~1 с.
+      operationId: restartSystem
+      responses:
+        '200':
+          description: Перезагрузка запланирована
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: System restarting in 1 second...
+
+  /info:
+    get:
+      tags: [Device]
+      summary: Информация об устройстве
+      operationId: getInfo
+      responses:
+        '200':
+          description: Сводка по чипу, памяти, сети
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+
+  /info/deep:
+    get:
+      tags: [Device]
+      summary: Расширенная системная информация
+      operationId: getInfoDeep
+      responses:
+        '200':
+          description: Wi-Fi, reset cause, unique ID, частота CPU
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /sensors:
+    get:
+      tags: [Sensors]
+      summary: Агрегированные данные датчиков
+      description: Заглушка — тестовые значения. Для реальных данных используйте /sensor/*.
+      operationId: getSensors
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sensors:
+                    type: object
+                    properties:
+                      temperature: { type: number }
+                      humidity: { type: number }
+                      pressure: { type: number }
+                      timestamp: { type: number }
+    post:
+      tags: [Sensors]
+      summary: Обновить настройки опроса датчиков
+      operationId: updateSensorsSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                read_interval: { type: integer, example: 5 }
+                enabled: { type: boolean, example: true }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: boolean }
+
+  /sensor/dht:
+    get:
+      tags: [DHT22]
+      summary: Показания DHT22
+      operationId: getDhtReading
+      parameters:
+        - $ref: '#/components/parameters/force'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DhtReadingResponse'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sensor/dht/status:
+    get:
+      tags: [DHT22]
+      summary: Статус DHT22
+      operationId: getDhtStatus
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  initialized: { type: boolean }
+                  pin: { type: integer, example: 14 }
+                  last_temperature: { type: number, nullable: true }
+                  last_humidity: { type: number, nullable: true }
+                  last_read_time: { type: integer }
+
+  /sensor/bmp280:
+    get:
+      tags: [BMP280]
+      summary: Показания BMP280
+      operationId: getBmp280Reading
+      parameters:
+        - $ref: '#/components/parameters/force'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bmp280ReadingResponse'
+        '503':
+          $ref: '#/components/responses/Error'
+
+  /sensor/bmp280/status:
+    get:
+      tags: [BMP280]
+      summary: Статус BMP280
+      operationId: getBmp280Status
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /sensor/co2:
+    get:
+      tags: [CO2]
+      summary: Концентрация CO₂
+      description: |
+        Поддерживаемые типы датчиков (config `CO2_SENSOR_TYPE`):
+        - **c8** — активный режим (кадры 0x42 0x4D) или query
+        - **mhz19c** — протокол Winsen MH-Z19
+      operationId: getCo2Reading
+      parameters:
+        - $ref: '#/components/parameters/force'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ReadingResponse'
+        '503':
+          description: Ошибка чтения + диагностика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ErrorResponse'
+
+  /sensor/co2/status:
+    get:
+      tags: [CO2]
+      summary: Статус CO₂ датчика
+      operationId: getCo2Status
+      parameters:
+        - name: probe
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Выполнить UART-пробу и включить результат в ответ
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2StatusResponse'
+
+  /sensor/co2/probe:
+    get:
+      tags: [CO2]
+      summary: Диагностика UART линии CO₂
+      operationId: probeCo2
+      responses:
+        '200':
+          description: Протокол распознан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ProbeResponse'
+        '503':
+          description: Протокол не распознан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ProbeResponse'
+
+  /sensor/co2/abc:
+    post:
+      tags: [CO2]
+      summary: Включить/выключить ABC (только MH-Z19C)
+      operationId: setCo2Abc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+                  example: false
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  abc_enabled: { type: boolean }
+                  result: { type: string, example: success }
+        '400':
+          $ref: '#/components/responses/Error'
+
+  /sensor/mhz19c:
+    get:
+      tags: [CO2]
+      summary: '[Deprecated] Алиас /sensor/co2'
+      deprecated: true
+      operationId: getCo2ReadingAlias
+      parameters:
+        - $ref: '#/components/parameters/force'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ReadingResponse'
+
+  /sensor/mhz19c/status:
+    get:
+      tags: [CO2]
+      summary: '[Deprecated] Алиас /sensor/co2/status'
+      deprecated: true
+      operationId: getCo2StatusAlias
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2StatusResponse'
+
+  /sensor/mhz19c/probe:
+    get:
+      tags: [CO2]
+      summary: '[Deprecated] Алиас /sensor/co2/probe'
+      deprecated: true
+      operationId: probeCo2Alias
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Co2ProbeResponse'
+
+  /gpio:
+    get:
+      tags: [GPIO]
+      summary: Состояние всех GPIO
+      operationId: getAllGpio
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [in, out]
+          description: Фильтр по режиму пина
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pins:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      "14": 1
+                      "16": 0
+                  meta:
+                    type: object
+                    additionalProperties: true
+
+  /gpio/batch:
+    post:
+      tags: [GPIO]
+      summary: Установить несколько пинов
+      operationId: setGpioBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pins]
+              properties:
+                pins:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                    enum: [0, 1]
+                  example:
+                    "2": 1
+                    "4": 0
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        success: { type: boolean }
+                        error: { type: string }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+
+  /gpio/{pin}:
+    parameters:
+      - $ref: '#/components/parameters/gpioPin'
+    get:
+      tags: [GPIO]
+      summary: Состояние одного пина
+      operationId: getGpioPin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pin: { type: integer }
+                  state: { type: integer, enum: [0, 1] }
+                  mode: { type: string, example: IN }
+                  meta:
+                    type: object
+                    properties:
+                      writable: { type: boolean }
+                      readable: { type: boolean }
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [GPIO]
+      summary: Установить состояние пина
+      operationId: setGpioPin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state:
+                  type: integer
+                  enum: [0, 1]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pin: { type: integer }
+                  state: { type: integer }
+                  result: { type: string, example: success }
+
+  /settings:
+    get:
+      tags: [Settings]
+      summary: Получить настройки
+      operationId: getSettings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+    post:
+      tags: [Settings]
+      summary: Обновить настройки
+      description: Частичное обновление — мержится с текущими значениями в config.json.
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: boolean }
+                  settings:
+                    $ref: '#/components/schemas/Settings'
+    delete:
+      tags: [Settings]
+      summary: Сбросить настройки к значениям по умолчанию
+      operationId: resetSettings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: string
+                    example: Settings reset to defaults
+
+  /weather:
+    get:
+      tags: [Weather]
+      summary: Текущая погода (WeatherAPI)
+      operationId: getWeather
+      parameters:
+        - $ref: '#/components/parameters/force'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  weather:
+                    type: object
+                    additionalProperties: true
+                  meta:
+                    type: object
+                    properties:
+                      cached: { type: boolean }
+                      timestamp: { type: number }
+                      update_interval: { type: integer }
+        '503':
+          $ref: '#/components/responses/Error'
+
+  /weather/refresh:
+    post:
+      tags: [Weather]
+      summary: Принудительно обновить погоду
+      operationId: refreshWeather
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  weather: { type: object }
+                  timestamp: { type: number }
+        '503':
+          $ref: '#/components/responses/Error'
+
+components:
+  parameters:
+    force:
+      name: force
+      in: query
+      description: Принудительное чтение / обновление (игнорировать кэш)
+      schema:
+        type: boolean
+        default: false
+      example: true
+    gpioPin:
+      name: pin
+      in: path
+      required: true
+      schema:
+        type: integer
+        example: 14
+
+  responses:
+    Error:
+      description: Ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: OK }
+        uptime: { type: integer }
+        memory_free: { type: integer }
+
+    DeviceInfo:
+      type: object
+      properties:
+        chip:
+          type: object
+          properties:
+            platform: { type: string }
+            micropython_version: { type: string }
+            machine_model: { type: string }
+            cpu_frequency_hz: { type: integer }
+        memory: { type: object }
+        filesystem: { type: object, nullable: true }
+        network: { type: object }
+        temperature: { type: number, nullable: true, description: Температура чипа ESP32 }
+
+    DhtReadingResponse:
+      type: object
+      properties:
+        sensor:
+          type: object
+          properties:
+            temperature_celsius: { type: number }
+            temperature_fahrenheit: { type: number }
+            humidity_percent: { type: number }
+            cached: { type: boolean }
+        meta:
+          type: object
+          properties:
+            sensor_type: { type: string, example: DHT22 }
+            pin: { type: integer }
+            timestamp: { type: integer }
+
+    Bmp280ReadingResponse:
+      type: object
+      properties:
+        sensor:
+          type: object
+          properties:
+            temperature_celsius: { type: number }
+            pressure_hpa: { type: number }
+            pressure_pa: { type: number }
+            pressure_mmhg: { type: number }
+            cached: { type: boolean }
+        meta:
+          type: object
+          properties:
+            sensor_type: { type: string, example: BMP280 }
+            i2c_id: { type: integer }
+            address: { type: integer }
+            timestamp: { type: integer }
+
+    Co2ReadingResponse:
+      type: object
+      properties:
+        sensor:
+          type: object
+          properties:
+            co2_ppm: { type: integer, example: 412 }
+            cached: { type: boolean }
+            mode: { type: string, enum: [active, query], nullable: true }
+        meta:
+          type: object
+          properties:
+            sensor_type: { type: string, example: C8 }
+            uart_id: { type: integer }
+            tx_pin: { type: integer }
+            rx_pin: { type: integer }
+            timestamp: { type: integer }
+
+    Co2ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        diagnostics: { type: object, additionalProperties: true }
+
+    Co2StatusResponse:
+      type: object
+      properties:
+        initialized: { type: boolean }
+        sensor_type: { type: string, enum: [c8, mhz19c] }
+        uart_id: { type: integer }
+        tx_pin: { type: integer }
+        rx_pin: { type: integer }
+        baudrate: { type: integer }
+        c8_mode: { type: string, enum: [active, query], nullable: true }
+        last_co2_ppm: { type: integer, nullable: true }
+        last_error: { type: string, nullable: true }
+        diagnostics: { type: object }
+
+    Co2ProbeResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        sensor_type: { type: string }
+        rx_analysis:
+          type: object
+          properties:
+            detected_protocol: { type: string, nullable: true }
+            has_c8_active_header: { type: boolean }
+            has_mhz19_header: { type: boolean }
+            summary: { type: string }
+        last_rx_buffer:
+          type: array
+          items: { type: string }
+
+    Settings:
+      type: object
+      properties:
+        wifi:
+          type: object
+          properties:
+            ssid: { type: string }
+            password: { type: string }
+        server:
+          type: object
+          properties:
+            port: { type: integer }
+            debug: { type: boolean }
+        sensors:
+          type: object
+          properties:
+            read_interval: { type: integer }
+            enabled: { type: boolean }

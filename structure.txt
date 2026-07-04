@@ -1,0 +1,41 @@
+project/
+│
+├── main.py                 # Точка входа, инициализация
+├── boot.py                 # Настройки при загрузке (опционально)
+│
+├── config.py               # Конфигурация (Wi-Fi, порты, флаги)
+├── wifi_manager.py         # Управление Wi-Fi подключением
+│
+├── server/
+│   ├── __init__.py         # Инициализация серверного модуля
+│   ├── app.py              # Основной класс сервера
+│   ├── router.py           # Маршрутизация запросов
+│   ├── middleware.py       # Общая обработка запросов
+│   └── handlers/           # Обработчики эндпоинтов
+│       ├── __init__.py
+│       ├── info_handler.py
+│       ├── sensors_handler.py
+│       ├── gpio_handler.py
+│       ├── settings_handler.py
+│       └── ... (другие обработчики)
+│
+├── services/               # Бизнес-логика
+│   ├── __init__.py
+│   ├── device_service.py   # Работа с аппаратной частью
+│   ├── sensor_service.py   # Чтение датчиков
+│   └── storage_service.py  # Работа с файловой системой
+│
+├── utils/                  # Вспомогательные функции
+│   ├── __init__.py
+│   ├── json_helper.py      # JSON сериализация
+│   ├── logger.py           # Логирование
+│   └── validators.py       # Валидация данных
+│
+├── models/                 # Модели данных
+│   ├── __init__.py
+│   └── response.py         # Структуры ответов
+│
+├── lib/                    # Внешние библиотеки
+│   └── ... (microdot, и т.д.)
+│
+└── requirements.txt        # Зависимости (опционально)
