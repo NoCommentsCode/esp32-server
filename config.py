@@ -6,8 +6,8 @@ class Config:
     """Класс для хранения конфигурации приложения"""
     
     # Wi-Fi настройки
-    #WIFI_SSID = 'your_ssid'
-    #WIFI_PASSWORD = '***'
+    WIFI_SSID = 'your_ssid'
+    WIFI_PASSWORD = 'your_password'
     
     # Серверные настройки
     SERVER_PORT = 80
