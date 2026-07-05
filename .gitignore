@@ -1,0 +1,21 @@
+# Секреты и локальная конфигурация
+.env
+.env.example
+secrets.py
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini

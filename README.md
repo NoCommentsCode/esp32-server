@@ -30,16 +30,22 @@
 
 ### 2. Конфигурация
 
-Отредактируйте `config.py`:
+Секреты (Wi-Fi, ключ WeatherAPI) хранятся в `.env` и **не попадают в git**.
 
-```python
-WIFI_SSID = 'your-network'
-WIFI_PASSWORD = 'your-password'
-
-CO2_SENSOR_TYPE = 'c8'      # 'c8' или 'mhz19c'
-WEATHER_API_KEY = 'your-key'
-WEATHER_CITY = 'Moscow'
+```bash
+copy .env.example .env          # Windows
+python scripts/generate_secrets.py
 ```
+
+Заполните `.env`:
+
+```env
+WIFI_SSID=your-network
+WIFI_PASSWORD=your-password
+WEATHER_API_KEY=your-key
+```
+
+Скрипт создаёт `secrets.py` — загрузите его на ESP32 вместе с остальными файлами проекта. Аппаратные настройки (пины, тип CO₂ и т.д.) по-прежнему в `config.py`.
 
 ### 3. Запуск
 
@@ -167,7 +173,9 @@ curl http://192.168.1.100/sensor/co2
 server_v2/
 ├── main.py              # Точка входа, регистрация маршрутов
 ├── boot.py
-├── config.py            # Wi-Fi, пины, тип CO₂ датчика
+├── config.py            # Пины, тип CO₂ датчика, таймауты
+├── secrets.example.py   # Шаблон секретов для ESP32
+├── .env.example         # Шаблон секретов для локальной разработки
 ├── wifi_manager.py
 ├── docs/
 │   └── openapi.yaml     # Спецификация API

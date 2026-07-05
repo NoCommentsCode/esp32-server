@@ -1,14 +1,21 @@
 # config.py
 import json
-import os
+
+try:
+    from secrets import WIFI_SSID, WIFI_PASSWORD, WEATHER_API_KEY
+except ImportError:
+    WIFI_SSID = ''
+    WIFI_PASSWORD = ''
+    WEATHER_API_KEY = ''
+
 
 class Config:
     """Класс для хранения конфигурации приложения"""
-    
-    # Wi-Fi настройки
-    WIFI_SSID = 'your_ssid'
-    WIFI_PASSWORD = 'your_password'
-    
+
+    # Wi-Fi (из secrets.py / .env)
+    WIFI_SSID = WIFI_SSID
+    WIFI_PASSWORD = WIFI_PASSWORD
+
     # Серверные настройки
     SERVER_PORT = 80
     SERVER_HOST = '0.0.0.0'
@@ -56,19 +63,19 @@ class Config:
     # DISPLAY_EVENT_DURATION_MS = 2000
 
     # WeatherAPI настройки
-    WEATHER_API_KEY = 'e0eb9a03e7954f99b0f180048262903'
+    WEATHER_API_KEY = WEATHER_API_KEY
     WEATHER_CITY = 'Moscow'
     WEATHER_LANG = 'ru'
     WEATHER_UPDATE_INTERVAL = 600  # Обновлять каждые 10 минут (в секундах)
-    
+
     # Таймауты
     WIFI_TIMEOUT = 10
     REQUEST_TIMEOUT = 5
     WEATHER_API_TIMEOUT = 10  # Таймаут для запросов к WeatherAPI
-    
+
     # Режим отладки
     DEBUG = True
-    
+
     @classmethod
     def load_from_file(cls, filename='config.json'):
         """Загрузка конфигурации из JSON файла"""
@@ -80,16 +87,13 @@ class Config:
                         setattr(cls, key, value)
         except:
             pass
-    
+
     @classmethod
     def save_to_file(cls, filename='config.json'):
         """Сохранение конфигурации в JSON файл"""
         config_data = {
-            'WIFI_SSID': cls.WIFI_SSID,
-            'WIFI_PASSWORD': cls.WIFI_PASSWORD,
             'SERVER_PORT': cls.SERVER_PORT,
             'DEBUG': cls.DEBUG,
-            'API_KEY': cls.API_KEY
         }
         try:
             with open(filename, 'w') as f:

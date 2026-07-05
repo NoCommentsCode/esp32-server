@@ -9,8 +9,8 @@ class StorageService:
         self.config_file = config_file
         self.default_settings = {
             'wifi': {
-                'ssid': '111',
-                'password': 'guga777gugi1'
+                'ssid': '',
+                'password': ''
             },
             'server': {
                 'port': 80,
