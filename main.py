@@ -27,7 +27,7 @@ from services.dht_service import DHTService
 from services.weather_service import WeatherService
 from services.bmp280_service import BMP280Service
 from services.co2_service import CO2Service
-# from services.display_service import DisplayService
+from services.display_service import DisplayService
 
 def register_routes(router, services):
     """Регистрация всех маршрутов"""
@@ -164,34 +164,24 @@ def main():
         )
     }
 
-    # Временно отключено: интеграция SPI-дисплея.
-    # if Config.DISPLAY_ENABLED:
-    #     services['display'] = DisplayService(
-    #         spi_id=Config.DISPLAY_SPI_ID,
-    #         sck_pin=Config.DISPLAY_SCK_PIN,
-    #         mosi_pin=Config.DISPLAY_MOSI_PIN,
-    #         miso_pin=Config.DISPLAY_MISO_PIN,
-    #         baudrate=Config.DISPLAY_BAUDRATE,
-    #         min_baudrate=Config.DISPLAY_MIN_BAUDRATE,
-    #         use_soft_spi_fallback=Config.DISPLAY_USE_SOFT_SPI_FALLBACK,
-    #         spi_polarity=Config.DISPLAY_SPI_POLARITY,
-    #         spi_phase=Config.DISPLAY_SPI_PHASE,
-    #         width=Config.DISPLAY_WIDTH,
-    #         height=Config.DISPLAY_HEIGHT,
-    #         rotation=Config.DISPLAY_ROTATION,
-    #         cs_pin=Config.DISPLAY_CS_PIN,
-    #         dc_pin=Config.DISPLAY_DC_PIN,
-    #         rst_pin=Config.DISPLAY_RST_PIN,
-    #         bl_pin=Config.DISPLAY_BL_PIN,
-    #         bl_active_high=Config.DISPLAY_BL_ACTIVE_HIGH,
-    #         use_bl_pwm=Config.DISPLAY_USE_BL_PWM,
-    #         bl_pwm_freq=Config.DISPLAY_BL_PWM_FREQ,
-    #         event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
-    #         dht_service=services['dht'],
-    #         bmp280_service=services['bmp280']
-    #     )
-    # else:
-    #     services['display'] = None
+    if Config.DISPLAY_ENABLED:
+        services['display'] = DisplayService(
+            i2c_id=Config.DISPLAY_I2C_ID,
+            sda_pin=Config.DISPLAY_SDA_PIN,
+            scl_pin=Config.DISPLAY_SCL_PIN,
+            i2c_freq=Config.DISPLAY_I2C_FREQ,
+            width=Config.DISPLAY_WIDTH,
+            height=Config.DISPLAY_HEIGHT,
+            address=Config.DISPLAY_ADDRESS,
+            color_split_y=Config.DISPLAY_COLOR_SPLIT_Y,
+            event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
+            idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
+            wifi_manager=wifi_manager,
+            dht_service=services['dht'],
+            bmp280_service=services['bmp280']
+        )
+    else:
+        services['display'] = None
     
     # 3. Инициализация маршрутизатора
     router = Router()
@@ -199,11 +189,11 @@ def main():
     # 4. Регистрация маршрутов
     register_routes(router, services)
     
-    # 5. Создание и запуск сервера
-    # Временно без display_service.
-    server = ESP32Server(wifi_manager, router)
-    
+    server = ESP32Server(wifi_manager, router, services.get('display'))
+
     if server.start():
+        if services.get('display'):
+            services['display'].show_wifi_status()
         try:
             server.run()
         except KeyboardInterrupt:

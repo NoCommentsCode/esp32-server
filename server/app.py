@@ -8,10 +8,10 @@ from models.response import HttpResponse
 class ESP32Server:
     """Основной класс сервера"""
     
-    def __init__(self, wifi_manager, router):
+    def __init__(self, wifi_manager, router, display_service=None):
         self.wifi_manager = wifi_manager
         self.router = router
-        # Временно отключено: self.display_service = display_service
+        self.display_service = display_service
         self.server_socket = None
         self.is_running = False
     
@@ -45,50 +45,75 @@ class ESP32Server:
     
     def run(self):
         """Основной цикл обработки запросов"""
+        self.server_socket.settimeout(0.5)
+
         while self.is_running:
             try:
                 client_sock, client_addr = self.server_socket.accept()
                 logger.debug("Connection from " + client_addr[0])
-                
-                self._handle_client(client_sock)
+                self._handle_client(client_sock, client_addr)
+            except OSError:
+                if self.display_service:
+                    self.display_service.tick()
             except Exception as e:
                 logger.error("Error in main loop: " + str(e))
 
-    def _handle_client(self, client_sock):
+    def _handle_client(self, client_sock, client_addr):
         """Обработка одного клиента"""
+        status_code = 500
+
         try:
-            # Получаем данные
             request_data = client_sock.recv(Config.SERVER_BUFFER_SIZE)
-            
+
             if not request_data:
                 return
-            
-            # Парсим запрос
+
             request = self._parse_request(request_data)
-            
+
             if request:
-                # Маршрутизируем
                 response = self.router.dispatch(request)
-                
-                # Отправляем ответ
+
                 if response:
+                    status_code = response.status_code
                     response_bytes = response.to_bytes()
-                    # Используем sendall для гарантированной отправки всех данных
                     client_sock.sendall(response_bytes)
                     logger.debug(f"Sent {len(response_bytes)} bytes")
                 else:
-                    # 404 Not Found
+                    status_code = 404
                     response = HttpResponse(status_code=404, error="Not found")
                     response_bytes = response.to_bytes()
                     client_sock.sendall(response_bytes)
+
+                if self.display_service:
+                    self.display_service.show_http_event(
+                        request['method'],
+                        request['path'],
+                        client_addr[0],
+                        status_code
+                    )
             else:
-                # Не удалось распарсить запрос
+                status_code = 400
                 response = HttpResponse(status_code=400, error="Bad request")
                 response_bytes = response.to_bytes()
                 client_sock.sendall(response_bytes)
-                
+
+                if self.display_service:
+                    self.display_service.show_http_event(
+                        '???',
+                        '/',
+                        client_addr[0],
+                        status_code
+                    )
+
         except Exception as e:
             logger.error("Error handling request: " + str(e))
+            if self.display_service:
+                self.display_service.show_http_event(
+                    'ERR',
+                    '/',
+                    client_addr[0],
+                    status_code
+                )
         finally:
             client_sock.close()
     

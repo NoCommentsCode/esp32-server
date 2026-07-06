@@ -18,6 +18,7 @@
 |--------|-----------|------------|
 | DHT22 | 1-Wire | GPIO 14 (DATA) |
 | BMP280 | I2C | GPIO 21 (SDA), GPIO 22 (SCL) |
+| OLED GMO09605 (SSD1306) | I2C (та же шина) | GPIO 21 (SDA), GPIO 22 (SCK/SCL) |
 | C8 / MH-Z19C | UART 9600 | GPIO 17 (TX → Rx датчика), GPIO 16 (RX ← Tx датчика) |
 
 **CO₂ датчик C8:** питание **5V**, общий GND с ESP32. В активном режиме шлёт кадры `0x42 0x4D` раз в секунду — TX ESP32 не обязателен.

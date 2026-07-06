@@ -38,29 +38,18 @@ class Config:
     CO2_SWAP_TX_RX = False
     CO2_C8_MODE = 'active'      # 'active' (1 с) или 'query' (по запросу)
 
-    # SPI TFT (GMT147SPI / ST7789) настройки
-    # Временно отключено. Оставлено для быстрого возврата функционала.
-    # DISPLAY_ENABLED = True
-    # DISPLAY_SPI_ID = 1
-    # DISPLAY_SCK_PIN = 18
-    # DISPLAY_MOSI_PIN = 23
-    # DISPLAY_MISO_PIN = None
-    # DISPLAY_BAUDRATE = 40000000
-    # DISPLAY_MIN_BAUDRATE = 5000000
-    # DISPLAY_USE_SOFT_SPI_FALLBACK = True
-    # DISPLAY_SPI_POLARITY = 0
-    # DISPLAY_SPI_PHASE = 0
-    # DISPLAY_WIDTH = 172
-    # DISPLAY_HEIGHT = 320
-    # DISPLAY_ROTATION = 1
-    # DISPLAY_CS_PIN = 5
-    # DISPLAY_DC_PIN = 2
-    # DISPLAY_RST_PIN = 4
-    # DISPLAY_BL_PIN = 15
-    # DISPLAY_BL_ACTIVE_HIGH = True
-    # DISPLAY_USE_BL_PWM = False
-    # DISPLAY_BL_PWM_FREQ = 1000
-    # DISPLAY_EVENT_DURATION_MS = 2000
+    # I2C OLED (GMO09605 / SSD1306, 128x64, двухцветный)
+    DISPLAY_ENABLED = True
+    DISPLAY_I2C_ID = 0
+    DISPLAY_SDA_PIN = 21
+    DISPLAY_SCL_PIN = 22
+    DISPLAY_I2C_FREQ = 400000
+    DISPLAY_WIDTH = 128
+    DISPLAY_HEIGHT = 64
+    DISPLAY_ADDRESS = 0x3C
+    DISPLAY_COLOR_SPLIT_Y = 16
+    DISPLAY_EVENT_DURATION_MS = 2000
+    DISPLAY_IDLE_REFRESH_MS = 3000
 
     # WeatherAPI настройки
     WEATHER_API_KEY = WEATHER_API_KEY

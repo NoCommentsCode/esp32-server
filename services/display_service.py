@@ -4,359 +4,232 @@ from utils.logger import logger
 
 
 class DisplayService:
-    """Сервис для отображения статуса HTTP и данных датчиков на SPI дисплее."""
+    """Сервис отладочного I2C OLED (SSD1306, двухцветный GMO09605)."""
 
-    COLOR_BLACK = 0x0000
-    COLOR_WHITE = 0xFFFF
-    COLOR_RED = 0xF800
-    COLOR_GREEN = 0x07E0
-    COLOR_BLUE = 0x001F
-    COLOR_YELLOW = 0xFFE0
-    COLOR_CYAN = 0x07FF
-    COLOR_MAGENTA = 0xF81F
-    COLOR_ORANGE = 0xFD20
+    FONT_HEIGHT = 8
+    CHARS_PER_LINE = 21
 
     def __init__(
         self,
-        spi_id=1,
-        sck_pin=18,
-        mosi_pin=23,
-        miso_pin=None,
-        baudrate=40000000,
-        min_baudrate=5000000,
-        use_soft_spi_fallback=True,
-        spi_polarity=0,
-        spi_phase=0,
-        width=172,
-        height=320,
-        rotation=1,
-        cs_pin=5,
-        dc_pin=2,
-        rst_pin=4,
-        bl_pin=15,
-        bl_active_high=True,
-        use_bl_pwm=False,
-        bl_pwm_freq=1000,
+        i2c_id=0,
+        sda_pin=21,
+        scl_pin=22,
+        i2c_freq=400000,
+        width=128,
+        height=64,
+        address=0x3C,
+        color_split_y=16,
         event_duration_ms=2000,
+        idle_refresh_ms=3000,
+        wifi_manager=None,
         dht_service=None,
         bmp280_service=None
     ):
-        self.spi_id = spi_id
-        self.sck_pin = sck_pin
-        self.mosi_pin = mosi_pin
-        self.miso_pin = miso_pin
-        self.baudrate = baudrate
-        self.min_baudrate = min_baudrate
-        self.use_soft_spi_fallback = use_soft_spi_fallback
-        self.spi_polarity = spi_polarity
-        self.spi_phase = spi_phase
+        self.i2c_id = i2c_id
+        self.sda_pin = sda_pin
+        self.scl_pin = scl_pin
+        self.i2c_freq = i2c_freq
         self.width = width
         self.height = height
-        self.rotation = rotation
-        self.cs_pin = cs_pin
-        self.dc_pin = dc_pin
-        self.rst_pin = rst_pin
-        self.bl_pin = bl_pin
-        self.bl_active_high = bl_active_high
-        self.use_bl_pwm = use_bl_pwm
-        self.bl_pwm_freq = bl_pwm_freq
+        self.address = address
+        self.color_split_y = color_split_y
         self.event_duration_ms = event_duration_ms
+        self.idle_refresh_ms = idle_refresh_ms
 
+        self.wifi_manager = wifi_manager
         self.dht_service = dht_service
         self.bmp280_service = bmp280_service
 
+        self.i2c = None
         self.display = None
-        self.backlight_pwm = None
-        self.backlight_pin = None
         self.enabled = False
         self._event_until_ms = 0
         self._last_idle_draw_ms = 0
-        self._idle_refresh_ms = 1500
 
         self._init_display()
 
+    def _import_ssd1306_class(self):
+        candidates = [
+            ('lib.ssd1306', 'SSD1306_I2C'),
+            ('ssd1306', 'SSD1306_I2C'),
+        ]
+        for module_name, class_name in candidates:
+            try:
+                module = __import__(module_name, None, None, [class_name])
+                return getattr(module, class_name)
+            except Exception:
+                pass
+
+        logger.warning(
+            "Display disabled: cannot import SSD1306 driver. "
+            "Expected lib/ssd1306.py or ssd1306.py on device"
+        )
+        return None
+
     def _init_display(self):
-        """Инициализация SPI и драйвера дисплея."""
-        st7789_module = self._import_st7789_module()
-        if st7789_module is None:
+        ssd1306_class = self._import_ssd1306_class()
+        if ssd1306_class is None:
             return
 
-        try:
-            # Включаем подсветку как можно раньше, чтобы не гасла после загрузки.
-            self._init_backlight()
-            self._set_backlight(True)
-            if not self._try_init_with_fallbacks(st7789_module):
-                raise Exception("all ST7789 init attempts failed")
+        candidate_addresses = [self.address]
+        if self.address != 0x3D:
+            candidate_addresses.append(0x3D)
+        if self.address != 0x3C:
+            candidate_addresses.append(0x3C)
 
+        try:
+            self.i2c = machine.I2C(
+                self.i2c_id,
+                sda=machine.Pin(self.sda_pin),
+                scl=machine.Pin(self.scl_pin),
+                freq=self.i2c_freq
+            )
+            scan_result = self.i2c.scan()
+            logger.info("Display I2C scan: {}".format([hex(addr) for addr in scan_result]))
+
+            for addr in candidate_addresses:
+                if addr in scan_result:
+                    self.address = addr
+                    break
+
+            self.display = ssd1306_class(
+                self.width,
+                self.height,
+                self.i2c,
+                addr=self.address
+            )
             self.enabled = True
-            self._draw_boot_test()
+            self._draw_boot_screen()
             self._draw_idle()
             logger.info(
-                "Display initialized: SPI({}) sck={} mosi={} mode={}/{} bl_pin={}".format(
-                    self.spi_id,
-                    self.sck_pin,
-                    self.mosi_pin,
-                    self.spi_polarity,
-                    self.spi_phase,
-                    self.bl_pin
+                "Display initialized: I2C({}) sda={} scl={} addr=0x{:02X}".format(
+                    self.i2c_id,
+                    self.sda_pin,
+                    self.scl_pin,
+                    self.address
                 )
             )
         except Exception as e:
             self.enabled = False
             self.display = None
+            self.i2c = None
             logger.error("Display init failed: {}".format(e))
-            self._set_backlight(True)
 
-    def _import_st7789_module(self):
-        """
-        Пытается импортировать один из распространенных модулей драйвера.
-        Возвращает модуль или None.
-        """
-        candidates = ["st7789", "st7789py"]
-        for module_name in candidates:
-            try:
-                module = __import__(module_name)
-                logger.info("Display driver module loaded: {}".format(module_name))
-                return module
-            except Exception:
-                pass
+    def _fit_text(self, text, max_len=None):
+        if max_len is None:
+            max_len = self.CHARS_PER_LINE
+        safe_text = str(text)
+        if len(safe_text) <= max_len:
+            return safe_text
+        if max_len <= 3:
+            return safe_text[:max_len]
+        return safe_text[:max_len - 3] + "..."
 
-        logger.warning(
-            "Display disabled: cannot import ST7789 driver. "
-            "Expected module: st7789.py or st7789py.py"
-        )
-        return None
-
-    def _build_spi(self, baudrate, polarity, phase, soft=False):
-        sck = machine.Pin(self.sck_pin)
-        mosi = machine.Pin(self.mosi_pin)
-        miso = machine.Pin(self.miso_pin) if self.miso_pin is not None else None
-
-        if soft:
-            return machine.SoftSPI(
-                baudrate=baudrate,
-                polarity=polarity,
-                phase=phase,
-                sck=sck,
-                mosi=mosi,
-                miso=miso
-            )
-
-        return machine.SPI(
-            self.spi_id,
-            baudrate=baudrate,
-            polarity=polarity,
-            phase=phase,
-            sck=sck,
-            mosi=mosi,
-            miso=miso
-        )
-
-    def _try_build_display(self, st7789, spi_obj):
-        reset_pin = machine.Pin(self.rst_pin, machine.Pin.OUT)
-        cs_pin = machine.Pin(self.cs_pin, machine.Pin.OUT)
-        dc_pin = machine.Pin(self.dc_pin, machine.Pin.OUT)
-
-        # На разных портах st7789 порядок аргументов может отличаться.
-        constructors = [
-            (self.width, self.height),
-            (self.height, self.width),
-        ]
-
-        for first, second in constructors:
-            try:
-                display = st7789.ST7789(
-                    spi_obj,
-                    first,
-                    second,
-                    reset=reset_pin,
-                    cs=cs_pin,
-                    dc=dc_pin,
-                    rotation=self.rotation
-                )
-                display.init()
-                return display
-            except Exception:
-                pass
-        return None
-
-    def _try_init_with_fallbacks(self, st7789):
-        modes = [
-            (self.spi_polarity, self.spi_phase),
-            (0, 0),
-            (1, 1),
-            (1, 0),
-            (0, 1),
-        ]
-        # Уберем дубликаты режимов, сохранив порядок.
-        unique_modes = []
-        for mode in modes:
-            if mode not in unique_modes:
-                unique_modes.append(mode)
-
-        baudrates = [self.baudrate, 20000000, 10000000, self.min_baudrate]
-        unique_baudrates = []
-        for b in baudrates:
-            if b not in unique_baudrates and b is not None and b > 0:
-                unique_baudrates.append(b)
-
-        transport_list = [False]
-        if self.use_soft_spi_fallback:
-            transport_list.append(True)
-
-        for use_soft in transport_list:
-            for baud in unique_baudrates:
-                for polarity, phase in unique_modes:
-                    try:
-                        spi_obj = self._build_spi(baud, polarity, phase, soft=use_soft)
-                        display = self._try_build_display(st7789, spi_obj)
-                        if display:
-                            self.spi = spi_obj
-                            self.display = display
-                            self.spi_polarity = polarity
-                            self.spi_phase = phase
-                            self.baudrate = baud
-                            logger.info(
-                                "Display init success: {}SPI baud={} mode={}/{}".format(
-                                    "Soft" if use_soft else "HW",
-                                    baud,
-                                    polarity,
-                                    phase
-                                )
-                            )
-                            return True
-                    except Exception:
-                        pass
-
-        return False
-
-    def _draw_boot_test(self):
-        """Короткий тест цветов при старте: удобно для диагностики железа."""
-        if not self.display:
-            return
-        try:
-            self.display.fill(self.COLOR_RED)
-            time.sleep_ms(80)
-            self.display.fill(self.COLOR_GREEN)
-            time.sleep_ms(80)
-            self.display.fill(self.COLOR_BLUE)
-            time.sleep_ms(80)
-            self.display.fill(self.COLOR_BLACK)
-            self._draw_line(0, "Display ready", self.COLOR_GREEN)
-        except Exception:
-            self._clear()
-
-    def _init_backlight(self):
-        if self.bl_pin is None:
-            return
-
-        try:
-            self.backlight_pin = machine.Pin(self.bl_pin, machine.Pin.OUT)
-            if self.use_bl_pwm:
-                self.backlight_pwm = machine.PWM(self.backlight_pin)
-                self.backlight_pwm.freq(self.bl_pwm_freq)
-        except Exception as e:
-            logger.warning("Backlight init failed: {}".format(e))
-            self.backlight_pin = None
-            self.backlight_pwm = None
-
-    def _set_backlight(self, enabled):
-        if self.bl_pin is None:
-            return
-
-        on_level = 1 if self.bl_active_high else 0
-        off_level = 0 if self.bl_active_high else 1
-        level = on_level if enabled else off_level
-
-        try:
-            if self.backlight_pwm:
-                duty = 65535 if level == 1 else 0
-                self.backlight_pwm.duty_u16(duty)
-            elif self.backlight_pin:
-                self.backlight_pin.value(level)
-        except Exception as e:
-            logger.warning("Backlight set failed: {}".format(e))
+    def _line_y(self, line_index):
+        return line_index * self.FONT_HEIGHT
 
     def _clear(self):
         if self.enabled and self.display:
-            self.display.fill(self.COLOR_BLACK)
+            self.display.fill(0)
 
-    def _text_line_y(self, line_index):
-        return 10 + (line_index * 24)
-
-    def _draw_line(self, line_index, text, color):
+    def _draw_text(self, line_index, text):
         if not self.enabled or not self.display:
             return
 
-        y = self._text_line_y(line_index)
-        safe_text = str(text)[:34]
+        y = self._line_y(line_index)
+        self.display.text(self._fit_text(text), 0, y)
 
-        # Большинство портов st7789 имеют text(str, x, y, color).
-        # Если текстовый API недоступен - просто не рисуем эту строку.
-        try:
-            self.display.text(safe_text, 8, y, color)
-        except Exception:
-            try:
-                import vga1_8x8 as font
-                self.display.text(font, safe_text, 8, y, color, self.COLOR_BLACK)
-            except Exception:
-                pass
+    def _flush(self):
+        if self.enabled and self.display:
+            self.display.show()
 
-    def _status_color(self, status_code):
-        if 200 <= status_code <= 299:
-            return self.COLOR_GREEN
-        if 300 <= status_code <= 399:
-            return self.COLOR_CYAN
-        if 400 <= status_code <= 499:
-            return self.COLOR_ORANGE
-        if 500 <= status_code <= 599:
-            return self.COLOR_RED
-        return self.COLOR_WHITE
-
-    def show_http_event(self, method, path, status_code):
-        """Показать событие HTTP на 2 секунды."""
+    def _draw_boot_screen(self):
         if not self.enabled:
             return
 
         self._clear()
-        self._draw_line(0, "HTTP request", self.COLOR_BLUE)
-        self._draw_line(1, "{} {}".format(method, path), self.COLOR_WHITE)
-        self._draw_line(2, "Status: {}".format(status_code), self._status_color(int(status_code)))
-        self._event_until_ms = time.ticks_add(time.ticks_ms(), self.event_duration_ms)
+        self._draw_text(0, "ESP32 Server")
+        self._draw_text(1, "Display ready")
+        self._flush()
+
+    def _wifi_line(self):
+        if self.wifi_manager and self.wifi_manager.is_connected:
+            try:
+                ssid = self.wifi_manager.wlan.config('essid')
+            except Exception:
+                ssid = "connected"
+            return "WiFi: {}".format(self._fit_text(ssid, 15))
+        return "WiFi: offline"
+
+    def _ip_line(self):
+        if self.wifi_manager and self.wifi_manager.is_connected:
+            ip = self.wifi_manager.get_ip()
+            if ip:
+                return "IP: {}".format(ip)
+        return "IP: ---"
 
     def _format_temp(self):
         if self.bmp280_service and self.bmp280_service.last_temperature is not None:
-            return "{:.1f} C".format(self.bmp280_service.last_temperature)
+            return "{:.1f}".format(self.bmp280_service.last_temperature)
         if self.dht_service and self.dht_service.last_temperature is not None:
-            return "{:.1f} C".format(self.dht_service.last_temperature)
-        return "--.- C"
+            return "{:.1f}".format(self.dht_service.last_temperature)
+        return "--.-"
 
     def _format_humidity(self):
         if self.dht_service and self.dht_service.last_humidity is not None:
-            return "{:.1f} %".format(self.dht_service.last_humidity)
-        return "--.- %"
+            return "{:.0f}".format(self.dht_service.last_humidity)
+        return "--"
 
     def _format_pressure(self):
         if self.bmp280_service and self.bmp280_service.last_pressure_hpa is not None:
-            return "{:.1f} hPa".format(self.bmp280_service.last_pressure_hpa)
-        return "----.- hPa"
+            return "{:.0f}".format(self.bmp280_service.last_pressure_hpa)
+        return "----"
+
+    def _status_label(self, status_code):
+        code = int(status_code)
+        if 200 <= code <= 299:
+            return "OK"
+        if 400 <= code <= 499:
+            return "client err"
+        if 500 <= code <= 599:
+            return "server err"
+        return "status"
+
+    def show_wifi_status(self):
+        """Обновить экран после подключения к Wi-Fi."""
+        if not self.enabled:
+            return
+        self._draw_idle()
+
+    def show_http_event(self, method, path, client_ip, status_code):
+        """Показать HTTP-запрос на несколько секунд."""
+        if not self.enabled:
+            return
+
+        self._clear()
+        self._draw_text(0, "HTTP {}".format(int(status_code)))
+        self._draw_text(1, "{} {}".format(method, self._fit_text(path, 16)))
+        self._draw_text(2, "from {}".format(self._fit_text(client_ip, 16)))
+        self._draw_text(3, "{} {}".format(int(status_code), self._status_label(status_code)))
+        self._flush()
+
+        self._event_until_ms = time.ticks_add(time.ticks_ms(), self.event_duration_ms)
 
     def _draw_idle(self):
         if not self.enabled:
             return
 
         self._clear()
-        self._draw_line(0, "Last sensors", self.COLOR_WHITE)
-        self._draw_line(1, "T: {}".format(self._format_temp()), self.COLOR_RED)
-        self._draw_line(2, "H: {}".format(self._format_humidity()), self.COLOR_CYAN)
-        self._draw_line(3, "P: {}".format(self._format_pressure()), self.COLOR_MAGENTA)
+        self._draw_text(0, self._wifi_line())
+        self._draw_text(1, self._ip_line())
+        self._draw_text(2, "T:{}C H:{}%".format(self._format_temp(), self._format_humidity()))
+        self._draw_text(3, "P:{} hPa".format(self._format_pressure()))
+        self._draw_text(4, "API :80 ready")
+        self._flush()
         self._last_idle_draw_ms = time.ticks_ms()
 
     def tick(self):
-        """
-        Метод периодического вызова из главного цикла.
-        Возвращает экран в idle после истечения HTTP события.
-        """
+        """Вернуть idle-экран после истечения HTTP-события."""
         if not self.enabled:
             return
 
@@ -365,5 +238,5 @@ class DisplayService:
         if in_event:
             return
 
-        if time.ticks_diff(now, self._last_idle_draw_ms) >= self._idle_refresh_ms:
+        if time.ticks_diff(now, self._last_idle_draw_ms) >= self.idle_refresh_ms:
             self._draw_idle()
