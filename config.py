@@ -1,4 +1,5 @@
 # config.py
+import gc
 import json
 
 try:
@@ -191,11 +192,46 @@ class Config:
 
     @classmethod
     def _log_config(cls, level, message):
+        print('[config] {}: {}'.format(level.upper(), message))
+
+    @classmethod
+    def _parse_json_text(cls, text):
+        text = text.strip()
+        if not text:
+            raise ValueError('empty config file')
+
         try:
-            from utils.logger import logger
-            getattr(logger, level)(message)
+            return json.loads(text)
         except Exception:
-            print('[config] {}: {}'.format(level.upper(), message))
+            pass
+
+        # Hand-edited files sometimes contain Python literals.
+        repaired = (
+            text.replace('True', 'true')
+            .replace('False', 'false')
+            .replace('None', 'null')
+        )
+        return json.loads(repaired)
+
+    @classmethod
+    def _quarantine_corrupt_file(cls, path):
+        try:
+            import os
+            bad_path = path + '.bad'
+            try:
+                os.remove(bad_path)
+            except OSError:
+                pass
+            os.rename(path, bad_path)
+            cls._log_config('warning', 'Quarantined corrupt config as {}'.format(bad_path))
+        except Exception as e:
+            cls._log_config('error', 'Failed to quarantine {}: {}'.format(path, e))
+
+    @classmethod
+    def _read_config_file(cls, path):
+        with open(path, 'r') as f:
+            text = f.read(8192)
+        return cls._parse_json_text(text)
 
     @classmethod
     def _normalize_config_data(cls, data):
@@ -245,14 +281,20 @@ class Config:
         cls._config_loaded_keys = []
 
         candidates = (filename,) if filename else cls.CONFIG_FILE_CANDIDATES
+        seen_paths = set()
         for path in candidates:
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+
             try:
-                with open(path, 'r') as f:
-                    data = json.load(f)
+                data = cls._read_config_file(path)
             except OSError:
                 continue
             except Exception as e:
                 cls._log_config('error', 'Failed to read {}: {}'.format(path, e))
+                cls._quarantine_corrupt_file(path)
+                gc.collect()
                 continue
 
             normalized = cls._normalize_config_data(data)

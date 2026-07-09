@@ -1,4 +1,5 @@
 # main.py
+import gc
 from config import Config
 from wifi_manager import WiFiManager
 from utils.logger import logger
@@ -137,15 +138,17 @@ def main():
     logger.info("ESP32 REST API Server Starting...")
     logger.info("=" * 50)
 
-    Config.load_from_file()
-    
-    # 1. Инициализация Wi-Fi
+    gc.collect()
+
+    # Wi-Fi инициализируется до чтения config.json — на ESP32 нужна свободная память.
     wifi_manager = WiFiManager()
     if not wifi_manager.connect():
         logger.error("Failed to connect to Wi-Fi")
         return
+
+    Config.load_from_file()
     
-    # 2. Инициализация сервисов
+    # 1. Инициализация сервисов
     services = {
         'device': DeviceService(wifi_manager),
         'sensors': SensorService(),
