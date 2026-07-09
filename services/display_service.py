@@ -1,3 +1,4 @@
+import gc
 import time
 import machine
 from utils.logger import logger
@@ -43,12 +44,25 @@ class DisplayService:
         self.co2_service = co2_service
 
         self.i2c = None
+        self._owns_i2c = False
+        self._i2c_mode = None
         self.display = None
         self.enabled = False
+        self._initialized = False
+        self._init_failed = False
         self._event_until_ms = 0
         self._last_idle_draw_ms = 0
 
+    def ensure_initialized(self):
+        """Ленивая инициализация дисплея после старта сервера."""
+        if self._initialized or self._init_failed:
+            return self.enabled
+
+        gc.collect()
+        logger.info("Display init, free mem: {}".format(gc.mem_free()))
         self._init_display()
+        self._initialized = True
+        return self.enabled
 
     def _import_ssd1306_class(self):
         candidates = [
@@ -68,9 +82,51 @@ class DisplayService:
         )
         return None
 
+    def _create_i2c(self):
+        bmp_i2c = None
+        if self.bmp280_service is not None:
+            bmp_i2c = getattr(self.bmp280_service, 'i2c', None)
+
+        if bmp_i2c is not None:
+            logger.info("Display reusing BMP280 I2C bus")
+            return bmp_i2c, 'shared', False
+
+        freq = self.i2c_freq
+        if freq > 400000:
+            freq = 400000
+
+        try:
+            i2c = machine.SoftI2C(
+                scl=machine.Pin(self.scl_pin),
+                sda=machine.Pin(self.sda_pin),
+                freq=freq
+            )
+            logger.info("Display SoftI2C initialized: sda={}, scl={}".format(
+                self.sda_pin, self.scl_pin
+            ))
+            return i2c, 'soft', True
+        except Exception as e:
+            logger.warning("Display SoftI2C init failed: {}".format(e))
+
+        try:
+            i2c = machine.I2C(
+                self.i2c_id,
+                sda=machine.Pin(self.sda_pin),
+                scl=machine.Pin(self.scl_pin),
+                freq=freq
+            )
+            logger.info("Display HW I2C initialized: id={}, sda={}, scl={}".format(
+                self.i2c_id, self.sda_pin, self.scl_pin
+            ))
+            return i2c, 'hw', True
+        except Exception as e:
+            logger.error("Display HW I2C init failed: {}".format(e))
+            return None, None, False
+
     def _init_display(self):
         ssd1306_class = self._import_ssd1306_class()
         if ssd1306_class is None:
+            self._init_failed = True
             return
 
         candidate_addresses = [self.address]
@@ -80,20 +136,26 @@ class DisplayService:
             candidate_addresses.append(0x3C)
 
         try:
-            self.i2c = machine.I2C(
-                self.i2c_id,
-                sda=machine.Pin(self.sda_pin),
-                scl=machine.Pin(self.scl_pin),
-                freq=self.i2c_freq
-            )
-            scan_result = self.i2c.scan()
-            logger.info("Display I2C scan: {}".format([hex(addr) for addr in scan_result]))
+            self.i2c, self._i2c_mode, self._owns_i2c = self._create_i2c()
+            if self.i2c is None:
+                raise Exception("I2C bus not available")
 
+            scan_result = self.i2c.scan()
+            logger.info("Display I2C scan ({}): {}".format(
+                self._i2c_mode,
+                [hex(addr) for addr in scan_result]
+            ))
+
+            found_addr = None
             for addr in candidate_addresses:
                 if addr in scan_result:
-                    self.address = addr
+                    found_addr = addr
                     break
 
+            if found_addr is None:
+                raise Exception("SSD1306 not found on I2C bus")
+
+            self.address = found_addr
             self.display = ssd1306_class(
                 self.width,
                 self.height,
@@ -104,17 +166,17 @@ class DisplayService:
             self._draw_boot_screen()
             self._draw_idle()
             logger.info(
-                "Display initialized: I2C({}) sda={} scl={} addr=0x{:02X}".format(
-                    self.i2c_id,
-                    self.sda_pin,
-                    self.scl_pin,
+                "Display ready: mode={} addr=0x{:02X}".format(
+                    self._i2c_mode,
                     self.address
                 )
             )
         except Exception as e:
             self.enabled = False
             self.display = None
-            self.i2c = None
+            if self._owns_i2c:
+                self.i2c = None
+            self._init_failed = True
             logger.error("Display init failed: {}".format(e))
 
     def _fit_text(self, text, max_len=None):
@@ -204,7 +266,7 @@ class DisplayService:
 
     def on_measurements_updated(self):
         """Обновить idle-экран после фонового опроса датчиков."""
-        if not self.enabled:
+        if not self.ensure_initialized():
             return
 
         now = time.ticks_ms()
@@ -215,13 +277,13 @@ class DisplayService:
 
     def show_wifi_status(self):
         """Обновить экран после подключения к Wi-Fi."""
-        if not self.enabled:
+        if not self.ensure_initialized():
             return
         self._draw_idle()
 
     def show_http_event(self, method, path, client_ip, status_code):
         """Показать HTTP-запрос на несколько секунд."""
-        if not self.enabled:
+        if not self.ensure_initialized():
             return
 
         self._clear()
@@ -248,7 +310,7 @@ class DisplayService:
 
     def tick(self):
         """Вернуть idle-экран после истечения HTTP-события."""
-        if not self.enabled:
+        if not self.ensure_initialized():
             return
 
         now = time.ticks_ms()

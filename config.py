@@ -201,7 +201,7 @@ class Config:
         """Сохранение изменяемых настроек в JSON."""
         try:
             with open(filename, 'w') as f:
-                json.dump(cls.get_mutable_settings(), f)
+                json.dump(cls.get_mutable_settings(), f, ensure_ascii=True)
             return True
         except Exception:
             return False

@@ -1,5 +1,4 @@
 # main.py
-import gc
 from config import Config
 from wifi_manager import WiFiManager
 from utils.logger import logger
@@ -173,28 +172,22 @@ def main():
     }
 
     if Config.DISPLAY_ENABLED:
-        gc.collect()
-        logger.info("Free mem before display: {}".format(gc.mem_free()))
-        try:
-            services['display'] = DisplayService(
-                i2c_id=Config.DISPLAY_I2C_ID,
-                sda_pin=Config.DISPLAY_SDA_PIN,
-                scl_pin=Config.DISPLAY_SCL_PIN,
-                i2c_freq=Config.DISPLAY_I2C_FREQ,
-                width=Config.DISPLAY_WIDTH,
-                height=Config.DISPLAY_HEIGHT,
-                address=Config.DISPLAY_ADDRESS,
-                color_split_y=Config.DISPLAY_COLOR_SPLIT_Y,
-                event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
-                idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
-                wifi_manager=wifi_manager,
-                dht_service=services['dht'],
-                bmp280_service=services['bmp280'],
-                co2_service=services['co2']
-            )
-        except Exception as e:
-            logger.error("Display init failed, continuing without display: {}".format(e))
-            services['display'] = None
+        services['display'] = DisplayService(
+            i2c_id=Config.DISPLAY_I2C_ID,
+            sda_pin=Config.DISPLAY_SDA_PIN,
+            scl_pin=Config.DISPLAY_SCL_PIN,
+            i2c_freq=Config.DISPLAY_I2C_FREQ,
+            width=Config.DISPLAY_WIDTH,
+            height=Config.DISPLAY_HEIGHT,
+            address=Config.DISPLAY_ADDRESS,
+            color_split_y=Config.DISPLAY_COLOR_SPLIT_Y,
+            event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
+            idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
+            wifi_manager=wifi_manager,
+            dht_service=services['dht'],
+            bmp280_service=services['bmp280'],
+            co2_service=services['co2']
+        )
     else:
         services['display'] = None
 
@@ -223,8 +216,12 @@ def main():
     )
 
     if server.start():
-        if services.get('display'):
-            services['display'].show_wifi_status()
+        display = services.get('display')
+        if display and display.ensure_initialized():
+            display.show_wifi_status()
+        elif display and not display.enabled:
+            services['display'] = None
+            server.display_service = None
         try:
             server.run()
         except KeyboardInterrupt:
