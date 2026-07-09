@@ -499,49 +499,58 @@ paths:
   /settings:
     get:
       tags: [Settings]
-      summary: Получить настройки
+      summary: Получить настройки станции
+      description: |
+        Возвращает изменяемые параметры из `Config` / `config.json` и метаданные:
+        какие ключи применяются сразу (`runtime_keys`), а какие требуют перезагрузки.
       operationId: getSettings
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Settings'
+                $ref: '#/components/schemas/SettingsResponse'
     post:
       tags: [Settings]
-      summary: Обновить настройки
-      description: Частичное обновление — мержится с текущими значениями в config.json.
+      summary: Обновить настройки станции
+      description: |
+        Частичное обновление плоских ключей `Config`. Runtime-параметры применяются сразу.
+        Изменение `*_ENABLED`, `STATION_ID`, `SERVER_PORT` сохраняется в `config.json`,
+        но вступает в силу после перезагрузки (`restart_required`).
       operationId: updateSettings
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Settings'
+              $ref: '#/components/schemas/SettingsUpdate'
+            example:
+              SENSOR_POLL_INTERVAL_MS: 10000
+              STATION_NAME: Дача
+              BMP280_ENABLED: false
       responses:
         '200':
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  result: { type: boolean }
-                  settings:
-                    $ref: '#/components/schemas/Settings'
+                $ref: '#/components/schemas/SettingsUpdateResult'
+        '400':
+          description: Неверные ключи или значения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsUpdateResult'
     delete:
       tags: [Settings]
       summary: Сбросить настройки к значениям по умолчанию
+      description: Сбрасывает изменяемые ключи к дефолтам из `config.py` и сохраняет `config.json`.
       operationId: resetSettings
       responses:
         '200':
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  result:
-                    type: string
-                    example: Settings reset to defaults
+                $ref: '#/components/schemas/SettingsUpdateResult'
 
   /weather:
     get:
@@ -768,7 +777,72 @@ components:
           type: array
           items: { type: string }
 
+    SettingsResponse:
+      type: object
+      properties:
+        settings:
+          $ref: '#/components/schemas/SettingsUpdate'
+        meta:
+          type: object
+          properties:
+            runtime_keys:
+              type: array
+              items: { type: string }
+            restart_required_keys:
+              type: array
+              items: { type: string }
+
+    SettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        SENSOR_POLL_INTERVAL_MS: { type: integer, minimum: 2000, example: 5000 }
+        SENSOR_POLL_ENABLED: { type: boolean, example: true }
+        DISPLAY_EVENT_DURATION_MS: { type: integer, minimum: 500, example: 2000 }
+        DISPLAY_IDLE_REFRESH_MS: { type: integer, minimum: 500, example: 3000 }
+        STATION_NAME: { type: string, example: Метеостанция }
+        WEATHER_CITY: { type: string, example: Moscow }
+        WEATHER_UPDATE_INTERVAL: { type: integer, minimum: 60, example: 600 }
+        DEBUG: { type: boolean, example: true }
+        DHT_ENABLED: { type: boolean, example: true }
+        BMP280_ENABLED: { type: boolean, example: true }
+        CO2_ENABLED: { type: boolean, example: true }
+        DISPLAY_ENABLED: { type: boolean, example: true }
+        WEATHER_ENABLED: { type: boolean, example: true }
+        STATION_ID: { type: string, example: station-01 }
+        SERVER_PORT: { type: integer, minimum: 1, maximum: 65535, example: 80 }
+
+    SettingsUpdateResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        applied:
+          type: array
+          items: { type: string }
+          description: Ключи, применённые без перезагрузки
+        restart_required:
+          type: array
+          items: { type: string }
+          description: Ключи, сохранённые в config.json, требуют reboot
+        settings:
+          $ref: '#/components/schemas/SettingsUpdate'
+        meta:
+          type: object
+          properties:
+            runtime_keys:
+              type: array
+              items: { type: string }
+            restart_required_keys:
+              type: array
+              items: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+
     Settings:
+      deprecated: true
+      description: Устаревшая вложенная схема. Используйте SettingsUpdate.
       type: object
       properties:
         wifi:

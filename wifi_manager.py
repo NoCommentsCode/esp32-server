@@ -1,4 +1,5 @@
 # wifi_manager.py
+import gc
 import network
 import time
 from config import Config
@@ -7,11 +8,21 @@ class WiFiManager:
     """Управление подключением к Wi-Fi"""
     
     def __init__(self):
+        gc.collect()
         self.wlan = network.WLAN(network.STA_IF)
         self.is_connected = False
     
     def connect(self):
         """Подключение к Wi-Fi сети"""
+        gc.collect()
+        try:
+            if self.wlan.active():
+                self.wlan.active(False)
+                time.sleep_ms(100)
+        except OSError:
+            pass
+
+        gc.collect()
         self.wlan.active(True)
         
         if self.wlan.isconnected():

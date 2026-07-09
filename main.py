@@ -1,4 +1,5 @@
 # main.py
+import gc
 from config import Config
 from wifi_manager import WiFiManager
 from utils.logger import logger
@@ -23,7 +24,7 @@ from server.handlers.co2_handler import CO2Handler
 from services.device_service import DeviceService
 from services.sensor_service import SensorService
 from services.gpio_service import GPIOService
-from services.storage_service import StorageService
+from services.settings_service import SettingsService
 from services.dht_service import DHTService
 from services.weather_service import WeatherService
 from services.bmp280_service import BMP280Service
@@ -39,7 +40,7 @@ def register_routes(router, services):
     discovery_handler = DiscoveryHandler(services['device'])
     sensors_handler = SensorsHandler(services['sensors'])
     gpio_handler = GPIOHandler(services['gpio'])
-    settings_handler = SettingsHandler(services['storage'])
+    settings_handler = SettingsHandler(services['settings'])
     system_handler = SystemHandler(services['wifi_manager'])
     dht_handler = DHTHandler(services['dht'])
     weather_handler = WeatherHandler(services['weather'])
@@ -136,19 +137,22 @@ def main():
     logger.info("=" * 50)
     logger.info("ESP32 REST API Server Starting...")
     logger.info("=" * 50)
-    
-    # 1. Инициализация Wi-Fi
+
+    gc.collect()
+
+    # Wi-Fi инициализируется до чтения config.json — на ESP32 нужна свободная память.
     wifi_manager = WiFiManager()
     if not wifi_manager.connect():
         logger.error("Failed to connect to Wi-Fi")
         return
+
+    Config.load_from_file()
     
-    # 2. Инициализация сервисов
+    # 1. Инициализация сервисов
     services = {
         'device': DeviceService(wifi_manager),
         'sensors': SensorService(),
         'gpio': GPIOService(),
-        'storage': StorageService(),
         'wifi_manager': wifi_manager,
         'dht': DHTService(pin_number=Config.DHT_PIN) if Config.DHT_ENABLED else None,
         'weather': WeatherService() if Config.WEATHER_ENABLED else None,
@@ -190,11 +194,7 @@ def main():
     else:
         services['display'] = None
 
-    has_pollable_sensors = any([
-        Config.DHT_ENABLED,
-        Config.BMP280_ENABLED,
-        Config.CO2_ENABLED
-    ])
+    has_pollable_sensors = Config.has_pollable_sensors()
     services['sensor_poll'] = SensorPollingService(
         dht_service=services['dht'],
         bmp280_service=services['bmp280'],
@@ -203,10 +203,7 @@ def main():
         enabled=Config.SENSOR_POLL_ENABLED and has_pollable_sensors
     )
 
-    if services['sensor_poll'].enabled:
-        services['sensor_poll'].poll_now()
-        if services.get('display'):
-            services['display'].on_measurements_updated()
+    services['settings'] = SettingsService(services)
     
     # 3. Инициализация маршрутизатора
     router = Router()
@@ -222,8 +219,6 @@ def main():
     )
 
     if server.start():
-        if services.get('display'):
-            services['display'].show_wifi_status()
         try:
             server.run()
         except KeyboardInterrupt:

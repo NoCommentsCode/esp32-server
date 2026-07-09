@@ -5,6 +5,8 @@ from utils.logger import logger
 class SensorPollingService:
     """Фоновое чтение датчиков по таймеру."""
 
+    STARTUP_DELAY_MS = 3000
+
     def __init__(
         self,
         dht_service=None,
@@ -19,6 +21,7 @@ class SensorPollingService:
         self.interval_ms = interval_ms
         self.enabled = enabled
         self._last_poll_ms = 0
+        self._ready_after_ms = time.ticks_add(time.ticks_ms(), self.STARTUP_DELAY_MS)
 
     def poll_now(self):
         """Принудительное чтение всех датчиков."""
@@ -30,6 +33,9 @@ class SensorPollingService:
             return False
 
         now = time.ticks_ms()
+        if time.ticks_diff(self._ready_after_ms, now) > 0:
+            return False
+
         if time.ticks_diff(now, self._last_poll_ms) < self.interval_ms:
             return False
 
