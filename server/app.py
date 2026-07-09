@@ -60,12 +60,21 @@ class ESP32Server:
 
     def _idle_tick(self):
         """Фоновые задачи в простое сервера."""
+        if self.display_service:
+            if not self.display_service._initialized and not self.display_service._init_failed:
+                try:
+                    self.display_service.ensure_initialized()
+                except Exception as e:
+                    logger.error("Display lazy init error: " + str(e))
+                    self.display_service._init_failed = True
+                    self.display_service._initialized = True
+
         if self.sensor_polling_service:
             if self.sensor_polling_service.tick():
-                if self.display_service:
+                if self.display_service and self.display_service.enabled:
                     self.display_service.on_measurements_updated()
 
-        if self.display_service:
+        if self.display_service and self.display_service.enabled:
             self.display_service.tick()
 
     def _handle_client(self, client_sock, client_addr):

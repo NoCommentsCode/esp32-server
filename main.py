@@ -216,12 +216,6 @@ def main():
     )
 
     if server.start():
-        display = services.get('display')
-        if display and display.ensure_initialized():
-            display.show_wifi_status()
-        elif display and not display.enabled:
-            services['display'] = None
-            server.display_service = None
         try:
             server.run()
         except KeyboardInterrupt:

@@ -54,14 +54,21 @@ class DisplayService:
         self._last_idle_draw_ms = 0
 
     def ensure_initialized(self):
-        """Ленивая инициализация дисплея после старта сервера."""
+        """Ленивая инициализация дисплея (только из idle-цикла сервера)."""
         if self._initialized or self._init_failed:
             return self.enabled
 
-        gc.collect()
-        logger.info("Display init, free mem: {}".format(gc.mem_free()))
-        self._init_display()
-        self._initialized = True
+        try:
+            gc.collect()
+            logger.info("Display init, free mem: {}".format(gc.mem_free()))
+            self._init_display()
+        except Exception as e:
+            self._init_failed = True
+            self.enabled = False
+            logger.error("Display init crashed: {}".format(e))
+        finally:
+            self._initialized = True
+
         return self.enabled
 
     def _import_ssd1306_class(self):
@@ -266,7 +273,7 @@ class DisplayService:
 
     def on_measurements_updated(self):
         """Обновить idle-экран после фонового опроса датчиков."""
-        if not self.ensure_initialized():
+        if not self.enabled:
             return
 
         now = time.ticks_ms()
@@ -277,13 +284,13 @@ class DisplayService:
 
     def show_wifi_status(self):
         """Обновить экран после подключения к Wi-Fi."""
-        if not self.ensure_initialized():
+        if not self.enabled:
             return
         self._draw_idle()
 
     def show_http_event(self, method, path, client_ip, status_code):
         """Показать HTTP-запрос на несколько секунд."""
-        if not self.ensure_initialized():
+        if not self.enabled:
             return
 
         self._clear()
@@ -310,7 +317,7 @@ class DisplayService:
 
     def tick(self):
         """Вернуть idle-экран после истечения HTTP-события."""
-        if not self.ensure_initialized():
+        if not self.enabled:
             return
 
         now = time.ticks_ms()
