@@ -51,26 +51,7 @@ class CO2Service:
             logger.error(self.last_error)
             return
 
-        try:
-            self.uart = machine.UART(
-                self.uart_id,
-                baudrate=self.baudrate,
-                bits=8,
-                parity=None,
-                stop=1,
-                tx=machine.Pin(self.tx_pin),
-                rx=machine.Pin(self.rx_pin),
-                timeout=0
-            )
-            logger.info(
-                "CO2 UART initialized: type={}, id={}, tx={}, rx={}".format(
-                    self.sensor_type, self.uart_id, self.tx_pin, self.rx_pin
-                )
-            )
-        except Exception as e:
-            self.last_error = "Failed to init UART: {}".format(e)
-            logger.error(self.last_error)
-            self.uart = None
+        if not self._init_uart():
             return
 
         try:
@@ -85,6 +66,53 @@ class CO2Service:
             self.last_error = "Cannot import/init CO2 driver: {}".format(e)
             logger.error(self.last_error)
             self.sensor = None
+
+    def _init_uart(self):
+        try:
+            if self.uart is not None:
+                try:
+                    self.uart.deinit()
+                except Exception:
+                    pass
+                self.uart = None
+
+            base_kwargs = {
+                'baudrate': self.baudrate,
+                'bits': 8,
+                'parity': None,
+                'stop': 1,
+                'tx': self.tx_pin,
+                'rx': self.rx_pin,
+                'timeout': 0,
+            }
+            try:
+                self.uart = machine.UART(self.uart_id, rxbuf=512, **base_kwargs)
+            except TypeError:
+                self.uart = machine.UART(self.uart_id, **base_kwargs)
+
+            logger.info(
+                "CO2 UART initialized: type={}, id={}, tx={}, rx={}".format(
+                    self.sensor_type, self.uart_id, self.tx_pin, self.rx_pin
+                )
+            )
+            return True
+        except Exception as e:
+            self.last_error = "Failed to init UART: {}".format(e)
+            logger.error(self.last_error)
+            self.uart = None
+            return False
+
+    def _reinit_if_needed(self):
+        if self.sensor is None:
+            self._init_sensor()
+            return self.sensor is not None
+
+        analysis = self._analyze_buffer(self.sensor.last_rx_buffer)
+        if analysis.get('byte_count', 0) == 0:
+            logger.warning("CO2 RX silent, reinitializing UART")
+            self.sensor = None
+            self._init_sensor()
+        return self.sensor is not None
 
     def _analyze_buffer(self, rx_buffer):
         byte_values = []
@@ -160,6 +188,8 @@ class CO2Service:
 
     def read(self, force=False, max_age_ms=5000):
         if self.sensor is None:
+            self._init_sensor()
+        if self.sensor is None:
             self._build_diagnostics()
             return None
 
@@ -179,6 +209,9 @@ class CO2Service:
         last_exception = None
         for attempt in range(2):
             try:
+                if force and attempt > 0:
+                    self._reinit_if_needed()
+
                 data = self.sensor.read_co2()
                 co2 = int(data["co2_ppm"])
 

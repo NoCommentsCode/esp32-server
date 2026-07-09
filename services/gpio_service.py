@@ -1,5 +1,7 @@
 # services/gpio_service.py (расширенная версия)
 import machine
+from config import Config
+
 
 class GPIOService:
     """Сервис для работы с GPIO"""
@@ -14,13 +16,16 @@ class GPIOService:
         # Список доступных пинов на ESP32
         # Включаем наиболее часто используемые пины
         available_pins = [2, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33]
+        reserved = Config.get_reserved_gpio_pins()
         
         for pin_num in available_pins:
+            if pin_num in reserved:
+                continue
             try:
                 # Пробуем инициализировать как INPUT с подтяжкой вниз
                 self.pins[pin_num] = machine.Pin(pin_num, machine.Pin.IN, machine.Pin.PULL_DOWN)
                 self.pin_modes[pin_num] = 'IN'
-            except Exception as e:
+            except Exception:
                 # Если пин недоступен, просто пропускаем
                 # Некоторые пины могут быть заняты (например, 6-11 зарезервированы для SPI flash)
                 pass
@@ -51,11 +56,14 @@ class GPIOService:
     def get_all_available_pins(self):
         """Получить состояние всех доступных пинов (создавая их при необходимости)"""
         result = {}
+        reserved = Config.get_reserved_gpio_pins()
         
         # Список всех возможных пинов ESP32
         all_possible_pins = range(0, 40)  # ESP32 имеет пины 0-39
         
         for pin_num in all_possible_pins:
+            if pin_num in reserved:
+                continue
             try:
                 # Пробуем прочитать пин
                 # Создаем временный пин для чтения
@@ -73,6 +81,9 @@ class GPIOService:
     
     def get_pin_state(self, pin_number):
         """Получить состояние конкретного пина"""
+        if pin_number in Config.get_reserved_gpio_pins():
+            return None
+
         # Если пин еще не инициализирован, пробуем инициализировать как INPUT
         if pin_number not in self.pins:
             try:
@@ -88,6 +99,9 @@ class GPIOService:
     
     def set_pin_state(self, pin_number, state):
         """Установить состояние пина"""
+        if pin_number in Config.get_reserved_gpio_pins():
+            return False
+
         # Проверяем, можно ли использовать этот пин как OUTPUT
         # Некоторые пины нельзя использовать как OUTPUT (например, входные только)
         forbidden_pins = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
@@ -109,6 +123,9 @@ class GPIOService:
     
     def add_pin(self, pin_number, mode='IN', pull=None):
         """Добавить новый пин в сервис"""
+        if pin_number in Config.get_reserved_gpio_pins():
+            return False
+
         try:
             if mode == 'IN':
                 if pull == 'UP':

@@ -110,6 +110,23 @@ class Config:
         return capabilities
 
     @classmethod
+    def get_reserved_gpio_pins(cls):
+        """Пины, занятые датчиками и дисплеем — не трогать в GPIOService."""
+        reserved = set()
+        if cls.DHT_ENABLED:
+            reserved.add(cls.DHT_PIN)
+        if cls.CO2_ENABLED:
+            reserved.add(cls.CO2_TX_PIN)
+            reserved.add(cls.CO2_RX_PIN)
+        if cls.BMP280_ENABLED:
+            reserved.add(cls.BMP280_SCL_PIN)
+            reserved.add(cls.BMP280_SDA_PIN)
+        if cls.DISPLAY_ENABLED:
+            reserved.add(cls.DISPLAY_SCL_PIN)
+            reserved.add(cls.DISPLAY_SDA_PIN)
+        return reserved
+
+    @classmethod
     def get_mutable_settings(cls):
         """Текущие значения настроек, доступных через /settings."""
         return {key: getattr(cls, key) for key in MUTABLE_SETTINGS}

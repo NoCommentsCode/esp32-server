@@ -32,6 +32,8 @@ class CO2Handler:
                     status_code=503,
                     data={
                         "error": "Failed to read from CO2 sensor",
+                        "initialized": self.co2_service.sensor is not None,
+                        "last_error": self.co2_service.last_error,
                         "diagnostics": self.co2_service.get_diagnostics()
                     }
                 )
