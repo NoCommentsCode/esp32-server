@@ -1,6 +1,7 @@
 # server/handlers/dht_handler.py
 from models.response import HttpResponse
 from utils.logger import logger
+from utils.sensor_responses import sensor_not_configured
 
 class DHTHandler:
     """Обработчик эндпоинтов для DHT22 датчика"""
@@ -22,6 +23,9 @@ class DHTHandler:
                     status_code=405,
                     error="Method not allowed. Use GET"
                 )
+
+            if self.dht_service is None:
+                return sensor_not_configured('DHT22')
             
             # Получаем query параметры
             query = request.get('query', {})
@@ -68,6 +72,15 @@ class DHTHandler:
         GET /sensor/dht/status - получить статус датчика
         """
         try:
+            if request.get('method') != 'GET':
+                return HttpResponse(
+                    status_code=405,
+                    error="Method not allowed. Use GET"
+                )
+
+            if self.dht_service is None:
+                return sensor_not_configured('DHT22')
+
             status = self.dht_service.get_status()
             
             return HttpResponse(

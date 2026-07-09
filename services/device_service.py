@@ -34,10 +34,6 @@ class DeviceService:
 
     def get_discovery_info(self):
         """Информация для идентификации станции в сети (GET /discovery)."""
-        capabilities = ['dht', 'bmp280', 'co2']
-        if Config.WEATHER_API_KEY:
-            capabilities.append('weather')
-
         mac = None
         if self.wifi_manager.is_connected:
             mac = self.wifi_manager.get_mac()
@@ -50,7 +46,7 @@ class DeviceService:
                 'name': Config.STATION_NAME,
                 'mac': mac
             },
-            'capabilities': capabilities,
+            'capabilities': Config.get_capabilities(),
             'status': 'online' if self.wifi_manager.is_connected else 'offline'
         }
 
