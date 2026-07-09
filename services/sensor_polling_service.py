@@ -62,8 +62,12 @@ class SensorPollingService:
 
         if self.co2_service:
             try:
-                if self.co2_service.read(force=True):
-                    updated = True
+                if self.co2_service.ensure_initialized():
+                    if self.co2_service.read(
+                        force=True,
+                        timeout_ms=self.co2_service.POLL_READ_TIMEOUT_MS
+                    ):
+                        updated = True
             except Exception as e:
                 logger.warning("CO2 poll error: {}".format(e))
 
