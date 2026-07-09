@@ -22,6 +22,13 @@ class Config:
     SERVER_MAX_CLIENTS = 5
     SERVER_BUFFER_SIZE = 1024
 
+    # Включение модулей (разная аппаратная конфигурация станций)
+    DHT_ENABLED = True
+    DHT_PIN = 14
+    BMP280_ENABLED = True
+    CO2_ENABLED = True
+    WEATHER_ENABLED = True
+
     # BMP280 настройки
     BMP280_I2C_ID = 0
     BMP280_SCL_PIN = 22

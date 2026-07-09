@@ -151,15 +151,15 @@ def main():
         'sensors': SensorService(),
         'gpio': GPIOService(),
         'wifi_manager': wifi_manager,
-        'dht': DHTService(pin_number=14),
-        'weather': WeatherService(),
+        'dht': DHTService(pin_number=Config.DHT_PIN) if Config.DHT_ENABLED else None,
+        'weather': WeatherService() if Config.WEATHER_ENABLED else None,
         'bmp280': BMP280Service(
             i2c_id=Config.BMP280_I2C_ID,
             scl_pin=Config.BMP280_SCL_PIN,
             sda_pin=Config.BMP280_SDA_PIN,
             address=Config.BMP280_ADDRESS,
             i2c_freq=Config.BMP280_I2C_FREQ
-        ),
+        ) if Config.BMP280_ENABLED else None,
         'co2': CO2Service(
             sensor_type=Config.CO2_SENSOR_TYPE,
             uart_id=Config.CO2_UART_ID,
@@ -168,7 +168,7 @@ def main():
             baudrate=Config.CO2_BAUDRATE,
             swap_tx_rx=Config.CO2_SWAP_TX_RX,
             c8_mode=Config.CO2_C8_MODE
-        )
+        ) if Config.CO2_ENABLED else None
     }
 
     if Config.DISPLAY_ENABLED:
@@ -197,10 +197,10 @@ def main():
         bmp280_service=services['bmp280'],
         co2_service=services['co2'],
         interval_ms=Config.SENSOR_POLL_INTERVAL_MS,
-        enabled=Config.SENSOR_POLL_ENABLED
+        enabled=Config.SENSOR_POLL_ENABLED and has_pollable_sensors
     )
 
-    if Config.SENSOR_POLL_ENABLED:
+    if services['sensor_poll'].enabled:
         services['sensor_poll'].poll_now()
         if services.get('display'):
             services['display'].on_measurements_updated()
