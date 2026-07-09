@@ -1,4 +1,5 @@
 # main.py
+import gc
 from config import Config
 from wifi_manager import WiFiManager
 from utils.logger import logger
@@ -172,22 +173,28 @@ def main():
     }
 
     if Config.DISPLAY_ENABLED:
-        services['display'] = DisplayService(
-            i2c_id=Config.DISPLAY_I2C_ID,
-            sda_pin=Config.DISPLAY_SDA_PIN,
-            scl_pin=Config.DISPLAY_SCL_PIN,
-            i2c_freq=Config.DISPLAY_I2C_FREQ,
-            width=Config.DISPLAY_WIDTH,
-            height=Config.DISPLAY_HEIGHT,
-            address=Config.DISPLAY_ADDRESS,
-            color_split_y=Config.DISPLAY_COLOR_SPLIT_Y,
-            event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
-            idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
-            wifi_manager=wifi_manager,
-            dht_service=services['dht'],
-            bmp280_service=services['bmp280'],
-            co2_service=services['co2']
-        )
+        gc.collect()
+        logger.info("Free mem before display: {}".format(gc.mem_free()))
+        try:
+            services['display'] = DisplayService(
+                i2c_id=Config.DISPLAY_I2C_ID,
+                sda_pin=Config.DISPLAY_SDA_PIN,
+                scl_pin=Config.DISPLAY_SCL_PIN,
+                i2c_freq=Config.DISPLAY_I2C_FREQ,
+                width=Config.DISPLAY_WIDTH,
+                height=Config.DISPLAY_HEIGHT,
+                address=Config.DISPLAY_ADDRESS,
+                color_split_y=Config.DISPLAY_COLOR_SPLIT_Y,
+                event_duration_ms=Config.DISPLAY_EVENT_DURATION_MS,
+                idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
+                wifi_manager=wifi_manager,
+                dht_service=services['dht'],
+                bmp280_service=services['bmp280'],
+                co2_service=services['co2']
+            )
+        except Exception as e:
+            logger.error("Display init failed, continuing without display: {}".format(e))
+            services['display'] = None
     else:
         services['display'] = None
 
@@ -199,11 +206,6 @@ def main():
         interval_ms=Config.SENSOR_POLL_INTERVAL_MS,
         enabled=Config.SENSOR_POLL_ENABLED and has_pollable_sensors
     )
-
-    if services['sensor_poll'].enabled:
-        services['sensor_poll'].poll_now()
-        if services.get('display'):
-            services['display'].on_measurements_updated()
 
     services['settings'] = SettingsService(services)
     
