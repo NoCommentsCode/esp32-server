@@ -1,6 +1,7 @@
 # server/handlers/weather_handler.py
 from models.response import HttpResponse
 from utils.logger import logger
+from utils.sensor_responses import sensor_not_configured
 
 class WeatherHandler:
     """Обработчик эндпоинтов для погоды"""
@@ -17,6 +18,9 @@ class WeatherHandler:
                     status_code=405,
                     error="Method not allowed. Use GET"
                 )
+
+            if self.weather_service is None:
+                return sensor_not_configured('Weather')
             
             # Получаем параметры запроса
             query = request.get('query', {})
@@ -61,6 +65,9 @@ class WeatherHandler:
                     status_code=405,
                     error="Method not allowed. Use POST"
                 )
+
+            if self.weather_service is None:
+                return sensor_not_configured('Weather')
             
             # Принудительно обновляем
             weather_data = self.weather_service.force_update()

@@ -1,6 +1,7 @@
 import json
 from models.response import HttpResponse
 from utils.logger import logger
+from utils.sensor_responses import sensor_not_configured
 
 
 class CO2Handler:
@@ -22,6 +23,9 @@ class CO2Handler:
                     status_code=405,
                     error="Method not allowed. Use GET"
                 )
+
+            if self.co2_service is None:
+                return sensor_not_configured('CO2')
 
             query = request.get("query", {})
             force = query.get("force", "").lower() == "true"
@@ -70,6 +74,9 @@ class CO2Handler:
                     error="Method not allowed. Use GET"
                 )
 
+            if self.co2_service is None:
+                return sensor_not_configured('CO2')
+
             query = request.get("query", {})
             probe = query.get("probe", "").lower() in ("1", "true", "yes")
 
@@ -94,6 +101,9 @@ class CO2Handler:
                     error="Method not allowed. Use GET"
                 )
 
+            if self.co2_service is None:
+                return sensor_not_configured('CO2')
+
             result = self.co2_service.probe()
             status_code = 200 if result.get("ok") else 503
             return HttpResponse(status_code=status_code, data=result)
@@ -112,6 +122,9 @@ class CO2Handler:
                     status_code=405,
                     error="Method not allowed. Use POST"
                 )
+
+            if self.co2_service is None:
+                return sensor_not_configured('CO2')
 
             if self.co2_service.sensor_type != "mhz19c":
                 return HttpResponse(
