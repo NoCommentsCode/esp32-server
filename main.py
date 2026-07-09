@@ -140,19 +140,34 @@ def main():
 
     gc.collect()
 
-    # Wi-Fi инициализируется до чтения config.json — на ESP32 нужна свободная память.
+    Config.load_from_file()
+
+    co2_service = None
+    if Config.CO2_ENABLED:
+        gc.collect()
+        co2_service = CO2Service(
+            sensor_type=Config.CO2_SENSOR_TYPE,
+            uart_id=Config.CO2_UART_ID,
+            tx_pin=Config.CO2_TX_PIN,
+            rx_pin=Config.CO2_RX_PIN,
+            baudrate=Config.CO2_BAUDRATE,
+            swap_tx_rx=Config.CO2_SWAP_TX_RX,
+            c8_mode=Config.CO2_C8_MODE
+        )
+        if not co2_service.ensure_initialized():
+            logger.warning("CO2 init failed: {}".format(co2_service.last_error))
+
+    gc.collect()
+
     wifi_manager = WiFiManager()
     if not wifi_manager.connect():
         logger.error("Failed to connect to Wi-Fi")
         return
 
-    Config.load_from_file()
-    
-    # 1. Инициализация сервисов
+    # 1. Инициализация сервисов (CO2 UART уже поднят до Wi-Fi; GPIO — после датчиков)
     services = {
         'device': DeviceService(wifi_manager),
         'sensors': SensorService(),
-        'gpio': GPIOService(),
         'wifi_manager': wifi_manager,
         'dht': DHTService(pin_number=Config.DHT_PIN) if Config.DHT_ENABLED else None,
         'weather': WeatherService() if Config.WEATHER_ENABLED else None,
@@ -163,15 +178,8 @@ def main():
             address=Config.BMP280_ADDRESS,
             i2c_freq=Config.BMP280_I2C_FREQ
         ) if Config.BMP280_ENABLED else None,
-        'co2': CO2Service(
-            sensor_type=Config.CO2_SENSOR_TYPE,
-            uart_id=Config.CO2_UART_ID,
-            tx_pin=Config.CO2_TX_PIN,
-            rx_pin=Config.CO2_RX_PIN,
-            baudrate=Config.CO2_BAUDRATE,
-            swap_tx_rx=Config.CO2_SWAP_TX_RX,
-            c8_mode=Config.CO2_C8_MODE
-        ) if Config.CO2_ENABLED else None
+        'co2': co2_service,
+        'gpio': GPIOService(),
     }
 
     if Config.DISPLAY_ENABLED:

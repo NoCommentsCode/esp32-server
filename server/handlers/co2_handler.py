@@ -30,12 +30,15 @@ class CO2Handler:
             query = request.get("query", {})
             force = query.get("force", "").lower() == "true"
 
-            data = self.co2_service.read(force=force)
+            data = self.co2_service.read(force=force, timeout_ms=1200)
             if data is None:
                 return HttpResponse(
                     status_code=503,
                     data={
                         "error": "Failed to read from CO2 sensor",
+                        "initialized": self.co2_service.sensor is not None,
+                        "init_failed": self.co2_service.init_failed,
+                        "last_error": self.co2_service.last_error,
                         "diagnostics": self.co2_service.get_diagnostics()
                     }
                 )
