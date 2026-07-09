@@ -9,6 +9,7 @@ from server.router import Router
 
 # Импортируем обработчики
 from server.handlers.info_handler import InfoHandler
+from server.handlers.discovery_handler import DiscoveryHandler
 from server.handlers.sensors_handler import SensorsHandler
 from server.handlers.gpio_handler import GPIOHandler
 from server.handlers.settings_handler import SettingsHandler
@@ -34,6 +35,7 @@ def register_routes(router, services):
     
     # Создаем экземпляры обработчиков
     info_handler = InfoHandler(services['device'])
+    discovery_handler = DiscoveryHandler(services['device'])
     sensors_handler = SensorsHandler(services['sensors'])
     gpio_handler = GPIOHandler(services['gpio'])
     settings_handler = SettingsHandler(services['storage'])
@@ -45,6 +47,9 @@ def register_routes(router, services):
     
     # Регистрируем маршруты с указанием HTTP методов
     
+    # GET /discovery - идентификация станции в сети
+    router.route('/discovery', methods=['GET'])(discovery_handler.handle)
+
     # GET /info - информация об устройстве
     router.route('/info', methods=['GET'])(info_handler.handle)
     

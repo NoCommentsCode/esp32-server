@@ -51,6 +51,12 @@ class Config:
     DISPLAY_EVENT_DURATION_MS = 2000
     DISPLAY_IDLE_REFRESH_MS = 3000
 
+    # Идентификация станции (discovery, будущий агрегатор)
+    STATION_ID = 'station-01'
+    STATION_NAME = 'Метеостанция'
+    API_VERSION = '2.0'
+    DEVICE_TYPE = 'esp32_weather_station'
+
     # WeatherAPI настройки
     WEATHER_API_KEY = WEATHER_API_KEY
     WEATHER_CITY = 'Moscow'
