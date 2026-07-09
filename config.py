@@ -12,6 +12,13 @@ except ImportError:
 class Config:
     """Класс для хранения конфигурации приложения"""
 
+    CONFIG_FILE = '/config.json'
+    CONFIG_FILE_CANDIDATES = ('/config.json', 'config.json')
+
+    # Заполняется при load_from_file() — для отладки через /settings meta
+    _config_file_path = None
+    _config_loaded_keys = []
+
     # Wi-Fi (из secrets.py / .env)
     WIFI_SSID = WIFI_SSID
     WIFI_PASSWORD = WIFI_PASSWORD
@@ -118,7 +125,9 @@ class Config:
                 restart_required_keys.append(key)
         return {
             'runtime_keys': runtime_keys,
-            'restart_required_keys': restart_required_keys
+            'restart_required_keys': restart_required_keys,
+            'config_file': cls._config_file_path,
+            'config_loaded_keys': list(cls._config_loaded_keys),
         }
 
     @classmethod
@@ -181,29 +190,102 @@ class Config:
         return coerced, None
 
     @classmethod
-    def load_from_file(cls, filename='config.json'):
-        """Загрузка изменяемых настроек из JSON перед стартом сервисов."""
+    def _log_config(cls, level, message):
         try:
-            with open(filename, 'r') as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return
-
-            for key, value in data.items():
-                coerced, error = cls.coerce_setting(key, value)
-                if error is None:
-                    setattr(cls, key, coerced)
+            from utils.logger import logger
+            getattr(logger, level)(message)
         except Exception:
-            pass
+            print('[config] {}: {}'.format(level.upper(), message))
 
     @classmethod
-    def save_to_file(cls, filename='config.json'):
+    def _normalize_config_data(cls, data):
+        """Плоский формат /settings или legacy nested config.json."""
+        if not isinstance(data, dict):
+            return {}
+
+        if any(key in MUTABLE_SETTINGS for key in data):
+            return data
+
+        flat = {}
+        server = data.get('server')
+        if isinstance(server, dict):
+            if 'port' in server:
+                flat['SERVER_PORT'] = server['port']
+            if 'debug' in server:
+                flat['DEBUG'] = server['debug']
+
+        sensors = data.get('sensors')
+        if isinstance(sensors, dict):
+            if 'enabled' in sensors:
+                flat['SENSOR_POLL_ENABLED'] = sensors['enabled']
+            if 'read_interval' in sensors:
+                flat['SENSOR_POLL_INTERVAL_MS'] = int(sensors['read_interval']) * 1000
+
+        return flat
+
+    @classmethod
+    def _apply_config_data(cls, data):
+        loaded = []
+        for key, value in data.items():
+            if key not in MUTABLE_SETTINGS:
+                continue
+            coerced, error = cls.coerce_setting(key, value)
+            if error is None:
+                setattr(cls, key, coerced)
+                loaded.append(key)
+            else:
+                cls._log_config('warning', 'Skip {}: {}'.format(key, error))
+        cls._config_loaded_keys = loaded
+        return loaded
+
+    @classmethod
+    def load_from_file(cls, filename=None):
+        """Загрузка изменяемых настроек из JSON перед стартом сервисов."""
+        cls._config_file_path = None
+        cls._config_loaded_keys = []
+
+        candidates = (filename,) if filename else cls.CONFIG_FILE_CANDIDATES
+        for path in candidates:
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+            except OSError:
+                continue
+            except Exception as e:
+                cls._log_config('error', 'Failed to read {}: {}'.format(path, e))
+                continue
+
+            normalized = cls._normalize_config_data(data)
+            loaded = cls._apply_config_data(normalized)
+            cls._config_file_path = path
+            cls._log_config(
+                'info',
+                'Loaded {} settings from {}'.format(len(loaded), path)
+            )
+            return loaded
+
+        cls._log_config('info', 'Config file not found, using defaults')
+        return []
+
+    @classmethod
+    def save_to_file(cls, filename=None):
         """Сохранение изменяемых настроек в JSON."""
+        path = filename or cls.CONFIG_FILE
         try:
-            with open(filename, 'w') as f:
-                json.dump(cls.get_mutable_settings(), f, ensure_ascii=True)
+            with open(path, 'w') as f:
+                json.dump(cls.get_mutable_settings(), f)
+                f.flush()
+            try:
+                import os
+                os.sync()
+            except Exception:
+                pass
+            cls._config_file_path = path
+            cls._config_loaded_keys = list(cls.get_mutable_settings().keys())
+            cls._log_config('info', 'Saved settings to {}'.format(path))
             return True
-        except Exception:
+        except Exception as e:
+            cls._log_config('error', 'Failed to save {}: {}'.format(path, e))
             return False
 
     @classmethod

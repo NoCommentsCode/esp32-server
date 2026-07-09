@@ -5,9 +5,9 @@ from utils.logger import logger
 class SettingsService:
     """Управление настройками станции через Config и config.json."""
 
-    def __init__(self, services, config_file='config.json'):
+    def __init__(self, services, config_file=None):
         self.services = services
-        self.config_file = config_file
+        self.config_file = config_file or Config.CONFIG_FILE
 
     def get_settings(self):
         return {
@@ -45,6 +45,7 @@ class SettingsService:
 
         applied = []
         restart_required = []
+        backup = {key: getattr(Config, key) for key in pending}
         for key, coerced in pending.items():
             setattr(Config, key, coerced)
             if MUTABLE_SETTINGS[key].get('runtime'):
@@ -54,9 +55,11 @@ class SettingsService:
 
         if applied or restart_required:
             if not Config.save_to_file(self.config_file):
+                for key, old_value in backup.items():
+                    setattr(Config, key, old_value)
                 return {
                     'ok': False,
-                    'errors': {'_save': 'Failed to save config.json'},
+                    'errors': {'_save': 'Failed to save config to {}'.format(self.config_file)},
                     'settings': Config.get_mutable_settings(),
                     'meta': Config.get_settings_meta()
                 }
