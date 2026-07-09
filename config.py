@@ -51,6 +51,10 @@ class Config:
     DISPLAY_EVENT_DURATION_MS = 2000
     DISPLAY_IDLE_REFRESH_MS = 3000
 
+    # Фоновый опрос датчиков (не по HTTP)
+    SENSOR_POLL_ENABLED = True
+    SENSOR_POLL_INTERVAL_MS = 5000
+
     # Идентификация станции (discovery, будущий агрегатор)
     STATION_ID = 'station-01'
     STATION_NAME = 'Метеостанция'

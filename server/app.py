@@ -8,10 +8,11 @@ from models.response import HttpResponse
 class ESP32Server:
     """Основной класс сервера"""
     
-    def __init__(self, wifi_manager, router, display_service=None):
+    def __init__(self, wifi_manager, router, display_service=None, sensor_polling_service=None):
         self.wifi_manager = wifi_manager
         self.router = router
         self.display_service = display_service
+        self.sensor_polling_service = sensor_polling_service
         self.server_socket = None
         self.is_running = False
     
@@ -53,10 +54,19 @@ class ESP32Server:
                 logger.debug("Connection from " + client_addr[0])
                 self._handle_client(client_sock, client_addr)
             except OSError:
-                if self.display_service:
-                    self.display_service.tick()
+                self._idle_tick()
             except Exception as e:
                 logger.error("Error in main loop: " + str(e))
+
+    def _idle_tick(self):
+        """Фоновые задачи в простое сервера."""
+        if self.sensor_polling_service:
+            if self.sensor_polling_service.tick():
+                if self.display_service:
+                    self.display_service.on_measurements_updated()
+
+        if self.display_service:
+            self.display_service.tick()
 
     def _handle_client(self, client_sock, client_addr):
         """Обработка одного клиента"""
