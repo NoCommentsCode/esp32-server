@@ -23,7 +23,7 @@ from server.handlers.co2_handler import CO2Handler
 from services.device_service import DeviceService
 from services.sensor_service import SensorService
 from services.gpio_service import GPIOService
-from services.storage_service import StorageService
+from services.settings_service import SettingsService
 from services.dht_service import DHTService
 from services.weather_service import WeatherService
 from services.bmp280_service import BMP280Service
@@ -39,7 +39,7 @@ def register_routes(router, services):
     discovery_handler = DiscoveryHandler(services['device'])
     sensors_handler = SensorsHandler(services['sensors'])
     gpio_handler = GPIOHandler(services['gpio'])
-    settings_handler = SettingsHandler(services['storage'])
+    settings_handler = SettingsHandler(services['settings'])
     system_handler = SystemHandler(services['wifi_manager'])
     dht_handler = DHTHandler(services['dht'])
     weather_handler = WeatherHandler(services['weather'])
@@ -136,6 +136,8 @@ def main():
     logger.info("=" * 50)
     logger.info("ESP32 REST API Server Starting...")
     logger.info("=" * 50)
+
+    Config.load_from_file()
     
     # 1. Инициализация Wi-Fi
     wifi_manager = WiFiManager()
@@ -148,7 +150,6 @@ def main():
         'device': DeviceService(wifi_manager),
         'sensors': SensorService(),
         'gpio': GPIOService(),
-        'storage': StorageService(),
         'wifi_manager': wifi_manager,
         'dht': DHTService(pin_number=14),
         'weather': WeatherService(),
@@ -190,6 +191,7 @@ def main():
     else:
         services['display'] = None
 
+    has_pollable_sensors = Config.has_pollable_sensors()
     services['sensor_poll'] = SensorPollingService(
         dht_service=services['dht'],
         bmp280_service=services['bmp280'],
@@ -202,6 +204,8 @@ def main():
         services['sensor_poll'].poll_now()
         if services.get('display'):
             services['display'].on_measurements_updated()
+
+    services['settings'] = SettingsService(services)
     
     # 3. Инициализация маршрутизатора
     router = Router()
