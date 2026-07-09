@@ -4,6 +4,8 @@ import os
 import sys
 import machine
 import ubinascii
+from config import Config
+
 
 class DeviceService:
     """Сервис для работы с аппаратной частью"""
@@ -29,7 +31,29 @@ class DeviceService:
             'network': self.wifi_manager.get_status(),
             'temperature': self._get_temperature()
         }
-    
+
+    def get_discovery_info(self):
+        """Информация для идентификации станции в сети (GET /discovery)."""
+        capabilities = ['dht', 'bmp280', 'co2']
+        if Config.WEATHER_API_KEY:
+            capabilities.append('weather')
+
+        mac = None
+        if self.wifi_manager.is_connected:
+            mac = self.wifi_manager.get_mac()
+
+        return {
+            'device_type': Config.DEVICE_TYPE,
+            'api_version': Config.API_VERSION,
+            'station': {
+                'id': Config.STATION_ID,
+                'name': Config.STATION_NAME,
+                'mac': mac
+            },
+            'capabilities': capabilities,
+            'status': 'online' if self.wifi_manager.is_connected else 'offline'
+        }
+
     def _get_memory_info(self):
         """Информация о памяти"""
         free_ram = gc.mem_free()

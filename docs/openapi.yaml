@@ -81,6 +81,38 @@ paths:
                     type: string
                     example: System restarting in 1 second...
 
+  /discovery:
+    get:
+      tags: [Device]
+      summary: Идентификация погодной станции
+      description: |
+        Лёгкий эндпоинт для обнаружения станции в локальной сети.
+        Фронтенд или сканер подсети проверяет поле `device_type` и использует
+        `station.id` как стабильный идентификатор (не IP).
+      operationId: getDiscovery
+      responses:
+        '200':
+          description: Станция идентифицирована
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResponse'
+              example:
+                device_type: esp32_weather_station
+                api_version: "2.0"
+                station:
+                  id: kitchen-01
+                  name: Кухня
+                  mac: "aa:bb:cc:dd:ee:ff"
+                capabilities: [dht, bmp280, co2, weather]
+                status: online
+        '405':
+          description: Метод не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /info:
     get:
       tags: [Device]
@@ -595,6 +627,41 @@ components:
         status: { type: string, example: OK }
         uptime: { type: integer }
         memory_free: { type: integer }
+
+    DiscoveryResponse:
+      type: object
+      properties:
+        device_type:
+          type: string
+          example: esp32_weather_station
+          description: Признак, что устройство — погодная станция
+        api_version:
+          type: string
+          example: "2.0"
+        station:
+          type: object
+          properties:
+            id:
+              type: string
+              example: kitchen-01
+              description: Уникальный ID станции (config.py)
+            name:
+              type: string
+              example: Кухня
+              description: Человекочитаемое имя / местоположение
+            mac:
+              type: string
+              nullable: true
+              example: "aa:bb:cc:dd:ee:ff"
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [dht, bmp280, co2, weather]
+        status:
+          type: string
+          enum: [online, offline]
+      required: [device_type, api_version, station, capabilities, status]
 
     DeviceInfo:
       type: object
