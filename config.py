@@ -22,6 +22,13 @@ class Config:
     SERVER_MAX_CLIENTS = 5
     SERVER_BUFFER_SIZE = 1024
 
+    # Включение модулей (разная аппаратная конфигурация станций)
+    DHT_ENABLED = True
+    DHT_PIN = 14
+    BMP280_ENABLED = True
+    CO2_ENABLED = True
+    WEATHER_ENABLED = True
+
     # BMP280 настройки
     BMP280_I2C_ID = 0
     BMP280_SCL_PIN = 22
@@ -74,6 +81,20 @@ class Config:
 
     # Режим отладки
     DEBUG = True
+
+    @classmethod
+    def get_capabilities(cls):
+        """Список возможностей станции для /discovery."""
+        capabilities = []
+        if cls.DHT_ENABLED:
+            capabilities.append('dht')
+        if cls.BMP280_ENABLED:
+            capabilities.append('bmp280')
+        if cls.CO2_ENABLED:
+            capabilities.append('co2')
+        if cls.WEATHER_ENABLED and cls.WEATHER_API_KEY:
+            capabilities.append('weather')
+        return capabilities
 
     @classmethod
     def load_from_file(cls, filename='config.json'):

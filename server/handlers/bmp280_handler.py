@@ -1,5 +1,6 @@
 from models.response import HttpResponse
 from utils.logger import logger
+from utils.sensor_responses import sensor_not_configured
 
 
 class BMP280Handler:
@@ -21,6 +22,9 @@ class BMP280Handler:
                     status_code=405,
                     error="Method not allowed. Use GET"
                 )
+
+            if self.bmp280_service is None:
+                return sensor_not_configured('BMP280')
 
             query = request.get("query", {})
             force = query.get("force", "").lower() == "true"
@@ -66,6 +70,9 @@ class BMP280Handler:
                     status_code=405,
                     error="Method not allowed. Use GET"
                 )
+
+            if self.bmp280_service is None:
+                return sensor_not_configured('BMP280')
 
             status = self.bmp280_service.get_status()
             return HttpResponse(
