@@ -23,7 +23,8 @@ class DisplayService:
         idle_refresh_ms=3000,
         wifi_manager=None,
         dht_service=None,
-        bmp280_service=None
+        bmp280_service=None,
+        co2_service=None
     ):
         self.i2c_id = i2c_id
         self.sda_pin = sda_pin
@@ -39,6 +40,7 @@ class DisplayService:
         self.wifi_manager = wifi_manager
         self.dht_service = dht_service
         self.bmp280_service = bmp280_service
+        self.co2_service = co2_service
 
         self.i2c = None
         self.display = None
@@ -185,6 +187,11 @@ class DisplayService:
             return "{:.0f}".format(self.bmp280_service.last_pressure_hpa)
         return "----"
 
+    def _format_co2(self):
+        if self.co2_service and self.co2_service.last_co2_ppm is not None:
+            return "{}".format(self.co2_service.last_co2_ppm)
+        return "---"
+
     def _status_label(self, status_code):
         code = int(status_code)
         if 200 <= code <= 299:
@@ -194,6 +201,17 @@ class DisplayService:
         if 500 <= code <= 599:
             return "server err"
         return "status"
+
+    def on_measurements_updated(self):
+        """Обновить idle-экран после фонового опроса датчиков."""
+        if not self.enabled:
+            return
+
+        now = time.ticks_ms()
+        if time.ticks_diff(self._event_until_ms, now) > 0:
+            return
+
+        self._draw_idle()
 
     def show_wifi_status(self):
         """Обновить экран после подключения к Wi-Fi."""
@@ -224,7 +242,7 @@ class DisplayService:
         self._draw_text(1, self._ip_line())
         self._draw_text(2, "T:{}C H:{}%".format(self._format_temp(), self._format_humidity()))
         self._draw_text(3, "P:{} hPa".format(self._format_pressure()))
-        self._draw_text(4, "API :80 ready")
+        self._draw_text(4, "CO2:{} ppm".format(self._format_co2()))
         self._flush()
         self._last_idle_draw_ms = time.ticks_ms()
 

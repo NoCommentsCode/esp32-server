@@ -29,6 +29,7 @@ from services.weather_service import WeatherService
 from services.bmp280_service import BMP280Service
 from services.co2_service import CO2Service
 from services.display_service import DisplayService
+from services.sensor_polling_service import SensorPollingService
 
 def register_routes(router, services):
     """Регистрация всех маршрутов"""
@@ -183,10 +184,24 @@ def main():
             idle_refresh_ms=Config.DISPLAY_IDLE_REFRESH_MS,
             wifi_manager=wifi_manager,
             dht_service=services['dht'],
-            bmp280_service=services['bmp280']
+            bmp280_service=services['bmp280'],
+            co2_service=services['co2']
         )
     else:
         services['display'] = None
+
+    services['sensor_poll'] = SensorPollingService(
+        dht_service=services['dht'],
+        bmp280_service=services['bmp280'],
+        co2_service=services['co2'],
+        interval_ms=Config.SENSOR_POLL_INTERVAL_MS,
+        enabled=Config.SENSOR_POLL_ENABLED
+    )
+
+    if Config.SENSOR_POLL_ENABLED:
+        services['sensor_poll'].poll_now()
+        if services.get('display'):
+            services['display'].on_measurements_updated()
     
     # 3. Инициализация маршрутизатора
     router = Router()
@@ -194,7 +209,12 @@ def main():
     # 4. Регистрация маршрутов
     register_routes(router, services)
     
-    server = ESP32Server(wifi_manager, router, services.get('display'))
+    server = ESP32Server(
+        wifi_manager,
+        router,
+        services.get('display'),
+        services.get('sensor_poll')
+    )
 
     if server.start():
         if services.get('display'):
